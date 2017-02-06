@@ -1,5 +1,5 @@
 # FastKMeansOnGPU
-Implementation of K-Means initialization procedure on GPUs
+K-Means initialization procedure on GPUs
 
 Running OpenMP version of the code
 

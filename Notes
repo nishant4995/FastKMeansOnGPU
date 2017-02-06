@@ -1,0 +1,5 @@
+It is very very important to export OMP_NUM_THREADS before running the program, else this will not be defined and program unusually seg faults
+
+
+Date: 6 Feb
+Writing d2_sample_2 with the assumption that in each run we get the same number of threads. This is needed so that the size of partitions remains the same throughout and I can use the cumulative distance array to optimize the procedure because distance value can change for a point only if it is smaller than the current value so we need not iterate over each center to find the minimum

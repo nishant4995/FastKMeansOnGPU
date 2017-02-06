@@ -1,8 +1,3 @@
-# FastKMeansOnGPU
-Implementation of K-Means initialization procedure on GPUs
-
-Running OpenMP version of the code
-
 Running make all will generate six binaries in the same directory, which are namely mnist, 3d_pro, cifar, birch1, birch2, birch3 for the respective data sets.
 To add a new data set, you'll have to modify at two places:
 1. main.h : Add an entry in the form
