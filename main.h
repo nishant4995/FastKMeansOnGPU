@@ -64,18 +64,18 @@
 using namespace std;
 
 typedef float Point __attribute__((vector_size(ROUNDED_DIMENSION*sizeof(float))));
-typedef float Distances __attribute__((vector_size(ROUNDED_CLUSTER*sizeof(float))));
+// typedef float Distances __attribute__((vector_size(ROUNDED_CLUSTER*sizeof(float))));
 
 
-static inline float distance(Point, Point);
-static inline int sample_from_distribution(vector<float> &, int, int, float);
+static inline double distance(Point, Point);
+static inline int sample_from_distribution(vector<double> &, int, int, double);
 static inline int sample_from_distribution_2 (vector<double> &, int , int , double );
-static inline float get_time_diff(struct timeval, struct timeval);
+static inline double get_time_diff(struct timeval, struct timeval);
 
-static inline string mean(float*,int);
-static inline string sd(float*,int);
+static inline string mean(double*,int);
+static inline string sd(double*,int);
 
 vector<Point> d2_sample(vector<Point> &, vector<Point> &, vector<int> &, int, int);
 vector<Point> d2_sample_2(vector<Point> &,vector<Point> &,vector<int> &, int, int,vector<double> &);
 Point mean_heuristic(vector<Point> &);
-vector<Point> independent_sample(vector<Point> &, vector<Point> &, float);
+vector<Point> independent_sample(vector<Point> &, vector<Point> &, double);

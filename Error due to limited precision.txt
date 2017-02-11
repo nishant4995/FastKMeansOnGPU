@@ -1,0 +1,30 @@
+This is correct calc
+prev_val + min_dist = new val
+192009078601097601351680 +  1559054711628234752000 =  193568134720100719656960
+
+new val - prev_val =  min_dist_c != min_dist
+193568134720100719656960 - 192009078601097601351680 = 1559056119003118305280
+
+Example of error due to precision of floating point numbers:
+Even when double is used everywhere
+0,2-->prev_val::219145517497640556691456
+0,2-->old_prev_val_c::219145517497640556691456
+0,2-->distances_c[lower+i]::469631602634976867123200
+0,2-->local_dist_0::250486085137336310431744
+0,2-->local_dist_1::24536580825498624
+0,2-->w,i::(1,1)
+0,2-->min_dist  ::24536580825498624
+0,2-->min_dist_c::24536580825498624
+0,2-->distances[lower+i]  ::219145542034221380403200
+0,2-->distances_c[lower+i]::219145542034221380403200
+0,2-->prev_val  ::219145542034221380403200
+0,2-->prev_val_c::219145542034221380403200
+
+219145517497640556691456
+	   24536580825498624
+------------------------
+219145542034221382190080 -->Correct
+219145542034221380403200 -->What we get
+
+prev_val + min_dist != distances[lower+i] even when we actually add the two operands on LHS to get the RHS
+This error is due to limited precision of floating point numbers , float has 7 digit and double had 15 (significant)digit precision.
