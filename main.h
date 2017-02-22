@@ -77,5 +77,6 @@ static inline string sd(double*,int);
 
 vector<Point> d2_sample(vector<Point> &, vector<Point> &, vector<int> &, int, int);
 vector<Point> d2_sample_2(vector<Point> &,vector<Point> &,vector<int> &, int, int,vector<double> &);
+Point d2_sample_3(vector<Point> &data,vector<Point> &centers,vector<int> &weights,int num_samples, int size);
 Point mean_heuristic(vector<Point> &);
 vector<Point> independent_sample(vector<Point> &, vector<Point> &, double);

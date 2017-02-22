@@ -7,6 +7,23 @@ unsigned int max_val = gen.max();
 
 int main(int argc, char* argv[]){
 
+
+	// Point a ,b;
+	// for (int myIter = 0; myIter < DIMENSION; ++myIter)
+	// {
+	// 	a[myIter] = 2;
+	// 	b[myIter] = 0;
+	// }
+	// printf("Dimension::%d\n",DIMENSION );
+	// printf("Distance_1::%f\n",distance(a,b));
+
+	// for (int myIter = 0; myIter < ROUNDED_DIMENSION; ++myIter)
+	// {
+	// 	a[myIter] = 2;
+	// 	b[myIter] = 0;
+	// }
+	// printf("Distance_2::%f\n",distance(a,b));
+	// return 1;
 	// argument processing logic
 
 	// FIRST ARGUMENT MUST SPECIFY THE MODE OF RUNNING. ALLOWED VALUES ARE random, kmeans++, d2-seeding, kmeans-par
@@ -95,6 +112,11 @@ int main(int argc, char* argv[]){
 	ofstream logger;
 
 	for(int run_no = 0; run_no < num_runs ; run_no++){
+
+		double samplingTime_1[NUM_CLUSTER];
+		double samplingTime_2[NUM_CLUSTER];
+		struct timeval sample_start, sample_end;
+
 		string log ="";
 		gettimeofday(&start,NULL);
 		// initialize the initial centers
@@ -125,12 +147,19 @@ int main(int argc, char* argv[]){
 			for(int i = 0; i < NUM_POINTS; i++){
 				weights[i] = 1;
 			}
-
 			vector<double> distances(NUM_POINTS);
 			for(int i = 0; i < NUM_CLUSTER; i++){
+				gettimeofday(&sample_start,NULL);
+				// printf("------------------------start--------------------------------------\n");
 				// vector<Point> multiset = d2_sample(data,centers,weights,N,i);
 				vector<Point> multiset = d2_sample_2(data,centers,weights,N,i,distances);
+				gettimeofday(&sample_end,NULL);
+				samplingTime_1[i] = get_time_diff(sample_start,sample_end);
+				// printf("-------------------------end---------------------------------------\n");
+				gettimeofday(&sample_start,NULL);
 				centers[i] = mean_heuristic(multiset);
+				gettimeofday(&sample_end,NULL);
+				samplingTime_2[i] = get_time_diff(sample_start,sample_end);
 			}
 		} else if(method == 3){
 			vector<Point> C;
@@ -282,6 +311,17 @@ int main(int argc, char* argv[]){
 		log = log + "Total time:" + to_string(total_time[run_no]) + "\n";
 		log = log + "Per iteration time:" + to_string(iter_time[run_no]) + "\n";
 		log = log + "Total iteration time:" + to_string(iter_time[run_no]*num_iter[run_no]) + "\n";
+		if(method == 2) // d2-seeding
+		{
+			// int iter;
+			// for (iter = 0; iter < NUM_CLUSTER; ++iter)
+			// {
+			// 	log = log + "samplingTime_1:" + to_string(iter) +"  "+ to_string(samplingTime_1[iter]) + "\n";
+			// 	log = log + "samplingTime_2:" + to_string(iter) +"  "+ to_string(samplingTime_2[iter]) + "\n";
+			// }
+			log = log + "samplingTime_1:" + mean(samplingTime_1,NUM_CLUSTER) + "\n";
+			log = log + "samplingTime_2:" + mean(samplingTime_2,NUM_CLUSTER) + "\n";
+		}
 		logger << log << endl;
 		logger.close();
 	}
@@ -311,6 +351,8 @@ vector<Point> d2_sample(vector<Point> &data,vector<Point> &centers,vector<int> &
 	}
     #pragma omp parallel
     {
+    	struct timeval start,end;
+    	gettimeofday(&start,NULL);
     	// create blocks of data
         int tid = omp_get_thread_num();
         int per_thread = num_pts / num_threads;
@@ -351,7 +393,10 @@ vector<Point> d2_sample(vector<Point> &data,vector<Point> &centers,vector<int> &
             }
             // printf("Number of threads::%d\n",omp_get_num_threads());
         }
+    	gettimeofday(&end,NULL);
+    	float cost_time = get_time_diff(start,end);
         #pragma omp barrier
+        gettimeofday(&start,NULL);
         #pragma omp for
         for(int i = 0;i < num_samples;i++){
         	// first pick a block from the local_sums distribution
@@ -363,15 +408,112 @@ vector<Point> d2_sample(vector<Point> &data,vector<Point> &centers,vector<int> &
             // now sample from the cumulative distribution of the block
             result[i] = data[sample_from_distribution(distances, startIndex, endIndex, rnd[2*i+1]*distances[endIndex-1])];
         }
+        gettimeofday(&end,NULL);
+        float sample_time = get_time_diff(start,end);
+        if (center_size >= 99)
+        {
+		    printf("Cost computation time 	::%f\n",cost_time);
+			printf("Sampling time 		::%f\n",sample_time);	
+        } 	
     }
     return result;
 }
 
-vector<Point> d2_sample_2(vector<Point> &data,vector<Point> &centers,vector<int> &weights,int num_samples, int size,vector<double> &distances_c){
+// This one is optimized for the case when we have to sample just one point, like when used in k-means ++
+Point d2_sample_3(vector<Point> &data,vector<Point> &centers,vector<int> &weights,int num_samples, int size){
 	int num_pts = data.size();
 	// cumulative probability for each group of points
 	// the distances are cumulative only for a group. So, [0,...,num_pts/num_threads], [num_pts/num_threads+1,...,num_pts*2/num_threads],... and so on. These groups contain cumulative distances.
 	vector<double> distances(num_pts);
+    vector<double> local_sums(num_threads);   // local sums. first is sum for [0...num_pts/num_threads-1], and so on. This is also a cumulative distribution.
+    // vector<Point> result(num_samples);
+    // we're gonna need 2*num_samples random numbers. 
+    vector<double> rnd(2*num_samples);
+	for(int i = 0; i < 2*num_samples; i++){
+		rnd[i] = ((double) gen())/max_val;
+	}
+    #pragma omp parallel
+    {
+    	// struct timeval start,end;
+    	// gettimeofday(&start,NULL);
+    	// create blocks of data
+        int tid = omp_get_thread_num();
+        int per_thread = num_pts / num_threads;
+        int lower = tid * per_thread;
+        int higher = (tid + 1) * per_thread;
+        if(tid == num_threads - 1) higher = num_pts;
+        int block_size = higher - lower;
+        double min_dist, local_dist;
+        Point p;
+        int w;
+        double prev_val = 0;
+        // cost of each block
+        double local_sum = 0;
+        int center_size = size;
+        for(int i = 0;i < block_size;i++){
+            w = weights[lower+i];
+            if(center_size == 0){
+                local_sum += w;
+                distances[lower+i] = w + prev_val;
+            } else{
+                p = data[lower+i];
+                min_dist = distance(p,centers[0]);
+                for (int j = 1; j < centers.size(); j++) {
+                    local_dist = distance(p,centers[j]);
+                    min_dist = min (min_dist, local_dist); // calculating minimum distances
+                }
+                local_sum += w * min_dist * min_dist;
+                distances[lower+i] = w * min_dist * min_dist + prev_val; // make cumulative 
+            }
+            prev_val = distances[lower+i];
+        }
+        local_sums[tid] = local_sum;
+        #pragma omp barrier // everyone is here now
+        #pragma omp master
+        {
+            for(int i=1;i<num_threads;i++){
+                local_sums[i] = local_sums[i] + local_sums[i-1]; // make cumulative
+            }
+            // printf("Number of threads::%d\n",omp_get_num_threads());
+        }
+    }
+
+    	// gettimeofday(&end,NULL);
+    	// float cost_time = get_time_diff(start,end);
+        // #pragma omp barrier
+        // gettimeofday(&start,NULL);
+        // #pragma omp for
+        // for(int i = 0;i < num_samples;i++){
+
+        	// first pick a block from the local_sums distribution
+            int groupNo = sample_from_distribution(local_sums, 0, num_threads, rnd[0]*local_sums[num_threads-1]);
+            // the start and end index of this block
+	        int per_thread = num_pts / num_threads;
+            int startIndex = groupNo * per_thread;
+            int endIndex = (groupNo + 1) * per_thread;
+            if(groupNo == num_threads - 1) endIndex = num_pts;
+            // now sample from the cumulative distribution of the block
+            // result[i] = 
+            return data[sample_from_distribution(distances, startIndex, endIndex, rnd[1]*distances[endIndex-1])];
+        // }
+        // gettimeofday(&end,NULL);
+   		// float sample_time = get_time_diff(start,end);
+        // if (center_size >= 0)
+        // {
+		    // printf("Cost computation time 	::%f\n",cost_time);
+			// printf("Sampling time 			::%f\n",sample_time);	
+        // }
+    	
+    
+    // return result;
+}
+
+
+vector<Point> d2_sample_2(vector<Point> &data,vector<Point> &centers,vector<int> &weights,int num_samples, int size,vector<double> &distances){
+	int num_pts = data.size();
+	// cumulative probability for each group of points
+	// the distances are cumulative only for a group. So, [0,...,num_pts/num_threads], [num_pts/num_threads+1,...,num_pts*2/num_threads],... and so on. These groups contain cumulative distances.
+	// vector<double> distances(num_pts);
     vector<double> local_sums(num_threads);   // local sums. first is sum for [0...num_pts/num_threads-1], and so on. This is also a cumulative distribution.
     vector<Point> result(num_samples);
     // we're gonna need 2*num_samples random numbers. 
@@ -385,6 +527,8 @@ vector<Point> d2_sample_2(vector<Point> &data,vector<Point> &centers,vector<int>
     #pragma omp parallel
     {
     	// create blocks of data
+    	struct timeval start,end;
+    	gettimeofday(&start,NULL);
         int tid = omp_get_thread_num();
         int per_thread = num_pts / num_threads;
         int lower = tid * per_thread;
@@ -392,12 +536,11 @@ vector<Point> d2_sample_2(vector<Point> &data,vector<Point> &centers,vector<int>
         if(tid == num_threads - 1) higher = num_pts;
         int block_size = higher - lower;
         double min_dist, local_dist;
-        double min_dist_c, local_dist_c;
         Point p;
         int w;
         double prev_val = 0;
-        double prev_val_c = 0;
-        double old_prev_val_c = 0;
+        double old_prev_val = 0;
+
         // cost of each block
         double local_sum = 0;
         int center_size = size;
@@ -410,12 +553,8 @@ vector<Point> d2_sample_2(vector<Point> &data,vector<Point> &centers,vector<int>
                 distances[lower+i] = w + prev_val;
             	prev_val = distances[lower+i];
             } 
-            else
+            else if (center_size == 1)
             {
-            	if ((center_size >= 2) && (tid == 0))
-            	{
-	            	printf("%d,%d-->prev_val::%f\n",tid,center_size,prev_val);	
-            	}
                 p = data[lower+i];
                 min_dist = distance(p,centers[0]);
                 // for (int j = 1; j < centers.size(); j++) 
@@ -424,102 +563,37 @@ vector<Point> d2_sample_2(vector<Point> &data,vector<Point> &centers,vector<int>
                     local_dist = distance(p,centers[j]);
                     min_dist = min (min_dist, local_dist); // calculating minimum distances
                 }
-                // double min_dist_sq;
-                // min_dist_sq = w * min_dist * min_dist;
                 local_sum += w * min_dist * min_dist;
-	            double temp = min_dist*min_dist;
-
-                distances[lower+i] = w * temp + prev_val; // make cumulative 
+                distances[lower+i] = w * min_dist*min_dist + prev_val; // make cumulative 
             	prev_val = distances[lower+i];
-            	//--------------------------------------------------------------------------------//
-            	if (center_size >= 2)
-            	{
-            		omp_set_lock(&print_lock);
-
-            		if(tid == 0)
-            		{
-            			// printf("---------------------------------------------------\n");
-	            		printf("%d,%d-->old_prev_val_c::%f\n",tid,center_size,old_prev_val_c);	
-	            		printf("%d,%d-->distances_c[lower+i]::%f\n",tid,center_size,distances_c[lower+i]);
-            		}
-            		min_dist_c 		= distances_c[lower+i] - old_prev_val_c;
-	            	old_prev_val_c 	= distances_c[lower+i];  // Important for it to have old value of distance[lower+i] so that min_dist is correct in next iteration
-	                local_dist_c 	= distance(p,centers[center_size-1]); // Find distance wrt last added new center;
-	                local_dist_c 	= local_dist_c*local_dist_c;
-
-	                min_dist_c 		= min(min_dist_c,local_dist_c);
-
-	                if(tid == 0)
-	                {
-	                	int tempIter;
-	                	for (tempIter = 0; tempIter < center_size; ++tempIter)
-	                	{
-	                		printf("%d,%d-->local_dist_%d::%f\n",tid,center_size,tempIter,distance(p,centers[tempIter])*distance(p,centers[tempIter]));
-	                		// printf("%d,%d-->local_dist_1::%f\n",tid,center_size,distance(p,centers[1])*distance(p,centers[1]));	
-	                	}
-	                	
-	                }
-	                distances_c[lower+i] = w * min_dist_c + prev_val_c; // make cumulative 
-	            	prev_val_c = distances_c[lower+i];
-
-	            	if (tid == 0)
-            		{
-
-		            	printf("%d,%d-->w,i::(%d,%d)\n",tid,center_size,w,i);
-	            		// printf("%d,%d-->min_dist  ::%f\n",tid,center_size,min_dist*min_dist);
-	            		printf("%d,%d-->min_dist  ::%f\n",tid,center_size,temp);
-	            		printf("%d,%d-->min_dist_c::%f\n",tid,center_size,min_dist_c);
-	            		printf("%d,%d-->distances[lower+i]  ::%f\n",tid,center_size,distances[lower+i]);
-	            		printf("%d,%d-->distances_c[lower+i]::%f\n",tid,center_size,distances_c[lower+i]);
-	            		printf("%d,%d-->prev_val  ::%f\n",tid,center_size,prev_val);	
-	            		printf("%d,%d-->prev_val_c::%f\n",tid,center_size,prev_val_c);	
-	            		printf("---------------------------------------------------\n");
-	            	}
-            		omp_unset_lock(&print_lock);
-            	}
-            	else
-            	{
-            		distances_c[lower+i] = distances[lower+i];
-            		if (tid == 0)
-            			printf("%d,%d-->i::%d\t,distances[lower+i] ::%f\n",tid,center_size,i,distances[lower+i]);
-            	}
-            	//--------------------------------------------------------------------------------//
             } 
-            // else // center_size >= 2
-            // {
-            //     p = data[lower+i];
-            //     // min_dist = distance(p,centers[0]);
-            //     min_dist   		= distances[lower+i] - old_prev_val;
-            // 	old_prev_val 	= distances[lower+i];  // Important for it to have old value of distance[lower+i] so that min_dist is correct in next iteration
-            //     local_dist 		= distance(p,centers[center_size-1]); // Find distance wrt last added new center;
-            //     min_dist 		= min(min_dist,local_dist);
+            else // center_size >= 2
+            {
+                p = data[lower+i];
+                // min_dist = distance(p,centers[0]);
+                min_dist   		= distances[lower+i] - old_prev_val;
+            	old_prev_val 	= distances[lower+i];  // Important for it to have old value of distance[lower+i] so that min_dist is correct in next iteration
+                local_dist 		= distance(p,centers[center_size-1]); // Find distance wrt last added new center;
+                local_dist 		= local_dist*local_dist;
+                min_dist 		= min(min_dist,local_dist);
                 
-            //     local_sum 		+= w * min_dist * min_dist;
-            //     distances[lower+i] = w * min_dist * min_dist + prev_val; // make cumulative 
-            // 	prev_val = distances[lower+i];
-            // }
+                local_sum 		+= w * min_dist; // min_dist is already squared here because it is calculated usign cumulative distance
+                distances[lower+i] = w * min_dist + prev_val; // make cumulative 
+            	prev_val = distances[lower+i];
+            }
         }
         local_sums[tid] = local_sum;
-        omp_set_lock(&print_lock);
-        if (center_size > 3)
-        {
-	        printf("distances  ::(%d,%d),%f\n",tid,center_size,distances[higher-1]);
-	        printf("distances_c::(%d,%d),%f\n",tid,center_size,distances_c[higher-1]);
-	        printf("local_sum  ::(%d,%d),%f\n\n",tid,center_size,local_sum);
-	    }
-        omp_unset_lock(&print_lock);
-        
         #pragma omp barrier // everyone is here now
         #pragma omp master
         {
             for(int i=1;i<num_threads;i++){
                 local_sums[i] = local_sums[i] + local_sums[i-1]; // make cumulative
             }
-        	printf("local_sum final::%f\n",local_sums[num_threads-1]);
-        	printf("-----------------------------------------------------------------------\n");
         }
-
+        gettimeofday(&end,NULL);
+    	float cost_time = get_time_diff(start,end);
         #pragma omp barrier
+        gettimeofday(&start,NULL);
         #pragma omp for
         for(int i = 0;i < num_samples;i++){
         	// first pick a block from the local_sums distribution
@@ -530,6 +604,13 @@ vector<Point> d2_sample_2(vector<Point> &data,vector<Point> &centers,vector<int>
             if(groupNo == num_threads - 1) endIndex = num_pts;
             // now sample from the cumulative distribution of the block
             result[i] = data[sample_from_distribution_2(distances, startIndex, endIndex, rnd[2*i+1]*distances[endIndex-1])];
+        }
+        gettimeofday(&end,NULL);
+        float sample_time = get_time_diff(start,end);
+        if (center_size >= 99)
+        {
+		    printf("Cost computation time 	::%f\n",cost_time);
+			printf("Sampling time 		::%f\n",sample_time);	
         }
     }
     return result;
@@ -570,16 +651,22 @@ static inline int sample_from_distribution_2 (vector<double> &probabilities, int
 
 // returns a center by running the mean heuristic on the multiset
 Point mean_heuristic(vector<Point> & multiset){
+
+	// struct timeval start,end;
 	// first do a kmeans++ initialiation on the multiset
 	vector<int> weights(multiset.size());
 	for(int i = 0; i < multiset.size(); i++){
 		weights[i] = 1;
 	}
+	// gettimeofday(&start,NULL);
 	vector<Point> level_2_sample(NUM_CLUSTER);
 	for(int i = 0; i < NUM_CLUSTER; i++){
-		level_2_sample[i] = d2_sample(multiset,level_2_sample,weights,1,i).at(0);
+		level_2_sample[i] = d2_sample_3(multiset,level_2_sample,weights,1,i);
 	}
 
+	// gettimeofday(&end,NULL);
+	// printf("Time taken to choose k centers::%f\n",get_time_diff(start,end));
+	// gettimeofday(&start,NULL);
 	vector<int> counts(NUM_CLUSTER); // number of points assigned to each kmeans++ center
     vector<Point> cluster_means(NUM_CLUSTER); // for taking the centroid later on. We maintain a sum of all points assigned to a center here.
     for (int i = 0; i < NUM_CLUSTER; i++) {
@@ -641,6 +728,8 @@ Point mean_heuristic(vector<Point> & multiset){
             index = i; // largest cluster with maximum points from sampled_set assigned to it.
         }
     }
+    // gettimeofday(&end,NULL);
+    // printf("Time for finding partitions::%f\n",get_time_diff(start,end));
     // do the scaling to find the mean
     for(int i = 0; i < DIMENSION; i++){
     	cluster_means[index][i] /= counts[index];
