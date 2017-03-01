@@ -86,4 +86,5 @@ int sample_from_distribution (double* probabilities, int startIndex, int endInde
 double distance(double* p1, double* p2);
 double* mean_heuristic(double* multiset,int multisetSize);
 double* d2_sample(double* data,double* centers,int numPts, int numSamples, int size);
+void write_centers_to_file(double* centers);
 #endif
