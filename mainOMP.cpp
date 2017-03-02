@@ -155,12 +155,15 @@ int main(int argc, char* argv[]){
 				vector<Point> multiset = d2_sample(data,centers,weights,N,i);
 				// vector<Point> multiset = d2_sample_2(data,centers,weights,N,i,distances);
 				gettimeofday(&sample_end,NULL);
+				printf("Time taken for d2_sample::%d-->%f\n",i,get_time_diff(sample_start, sample_end));
 				samplingTime_1[i] = get_time_diff(sample_start,sample_end);
 				// printf("-------------------------end---------------------------------------\n");
 				gettimeofday(&sample_start,NULL);
 				centers[i] = mean_heuristic(multiset);
 				gettimeofday(&sample_end,NULL);
 				samplingTime_2[i] = get_time_diff(sample_start,sample_end);
+				printf("Time taken for mean_heuristic::%d-->%f\n",i,get_time_diff(sample_start, sample_end));
+
 			}
 		} else if(method == 3){
 			vector<Point> C;

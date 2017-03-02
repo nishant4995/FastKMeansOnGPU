@@ -108,6 +108,8 @@ int main(int argc, char const *argv[])
 	int runNum;
 	for(runNum = 0; runNum < numRuns ; runNum++)
 	{
+		double samplingTime_1[NUM_CLUSTER];
+		double samplingTime_2[NUM_CLUSTER];
 		printf("Running runNum::%d\n",runNum );
 		gettimeofday(&start,NULL);
 
@@ -142,14 +144,22 @@ int main(int argc, char const *argv[])
 				// 	int point = sample_from_distribution(distances,0,NUM_POINTS,rnd[j]);
 				// 	memcpy(multiset+j*DIMENSION,data+point*DIMENSION,DIMENSION*sizeof(double));
 				// }
-
-				
+				struct timeval sample_start,sample_end;
+				gettimeofday(&sample_start,NULL);
 				multiset = d2_sample(data,centers,NUM_POINTS,N,i);
+				gettimeofday(&sample_end,NULL);
+				printf("Time taken for d2_sample::%d-->%f\n",i,get_time_diff(sample_start,sample_end));
+				samplingTime_1[i] = get_time_diff(sample_start,sample_end);
+
+				gettimeofday(&sample_start,NULL);
 				double* nextCenter = mean_heuristic(multiset,N);
 				for (int j = 0; j < DIMENSION; ++j)
 				{
 					centers[i*DIMENSION + j] = nextCenter[j];
 				}
+				gettimeofday(&sample_end,NULL);
+				printf("Time taken for mean_heuristic::%d-->%f\n",i,get_time_diff(sample_start,sample_end));
+				samplingTime_2[i] = get_time_diff(sample_start,sample_end);
 				// memcpy(centers + i*DIMENSION, nextCenter, DIMENSION*sizeof(double));
 			}
 			// cudaProfilerStop();
@@ -289,6 +299,11 @@ int main(int argc, char const *argv[])
 		fprintf(logger, "Total time:%f\n",totalTime[runNum]);
 		fprintf(logger, "Per iteration time:%f\n",iterTime[runNum]);
 		fprintf(logger, "Total iteration time:%f\n",iterTime[runNum]*numIter[runNum]);
+		if(method == 2) // d2-seeding
+		{
+			fprintf(logger,"samplingTime_1:%f\n",mean(samplingTime_1,NUM_CLUSTER));
+			fprintf(logger,"samplingTime_2:%f\n",mean(samplingTime_2,NUM_CLUSTER));
+		}
 		fclose(logger);
 	}
 
