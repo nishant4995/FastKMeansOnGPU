@@ -8,3 +8,9 @@ Writing d2_sample_2 with the assumption that in each run we get the same number 
 Date: 1 March
 Which random number generator do we use has an impact on the performance on the cost of the solution
 MT19937 is better than using standard rand() function! Need to find its c variant and use it
+
+Date: 2 March
+Distribution of workload between threads is wrongly done in d2_sample.
+This has been working fine all this time because number of threads was a factor of NUM_POINTS and so no points were left out.
+If it is not the case then some points are left out towards the last for which no thread does the calculation.
+I have used the same thing everywhere so may be I need to correct it so that if num_threads is not a factor of NUM_POINTS, things still work correctly

@@ -81,7 +81,7 @@ static inline double get_time_diff(struct timeval, struct timeval);
 __global__ void kernelAddConstant(int *g_a, const int b);
 int correctResult(int *data, const int n, const int b);
 int main_check();
-__global__ void comp_dist(double* dev_data,double* dev_distances,double* dev_centers,int centerIter,int numPoints,int dev_dimension);
+__global__ void comp_dist(double* dev_data,double* dev_distances,double* dev_partition_sums, double* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
 int sample_from_distribution (double* probabilities, int startIndex, int endIndex, double prob);
 double distance(double* p1, double* p2);
 double* mean_heuristic(double* multiset,int multisetSize);
