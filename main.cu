@@ -142,7 +142,7 @@ int main(int argc, char const *argv[])
 			int tempPointIndex = tempRand*NUM_POINTS;
 			checkCudaErrors(cudaMemcpy(dev_centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double),cudaMemcpyHostToDevice));
 
-			double compDistTime = 0, samplingTime = 0, meanHeuristicTime = 0;
+			double compDistTime = 0, makeCumulativeTime = 0, samplingTime = 0, meanHeuristicTime = 0;
 			for(i = 1; i < NUM_CLUSTER; i++)
 			{
 				struct timeval sample_start,sample_end;
@@ -164,7 +164,7 @@ int main(int argc, char const *argv[])
 				}
 				gettimeofday(&sample_end,NULL);
 				printf("Time taken to make cumulative::\t%d\t%f\n",i,get_time_diff(sample_start,sample_end));
-				compDistTime += get_time_diff(sample_start,sample_end);
+				makeCumulativeTime += get_time_diff(sample_start,sample_end);
 				
 				int per_thread = (NUM_POINTS + numGPUThreads-1)/numGPUThreads;
 				// double tempSum = 0;
@@ -228,6 +228,7 @@ int main(int argc, char const *argv[])
 				meanHeuristicTime += get_time_diff(sample_start,sample_end);
 			}
 			printf("compDistTime\t\t%2.5f\t%2.5f\n",compDistTime,compDistTime/(NUM_CLUSTER-1) );
+			printf("makeCumulativeTime\t%2.5f\t%2.5f\n",makeCumulativeTime,makeCumulativeTime/(NUM_CLUSTER-1) );
 			printf("samplingTime\t\t%2.5f\t%2.5f\n",samplingTime,samplingTime/(NUM_CLUSTER-1) );
 			printf("meanHeuristicTime\t%2.5f\t%2.5f\n",meanHeuristicTime,meanHeuristicTime/(NUM_CLUSTER-1) );
 			cudaProfilerStop();
