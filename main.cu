@@ -6,6 +6,7 @@
 // mt19937 gen(rd());
 // unsigned int max_val = gen.max();
 int numThreads = 1;
+__constant__ double dev_centers_global[NUM_CLUSTER*DIMENSION]; // For using constant memory
 int main(int argc, char const *argv[])
 {
 	// Currently no argument processing logic, will always run birch1 for 2 times with N=10k
@@ -118,43 +119,57 @@ int main(int argc, char const *argv[])
 		int numThreadsPerBlock 	= 1024;
 		int numGPUThreads = numBlocks*numThreadsPerBlock;
 
-		double* distances 		= (double*)malloc(NUM_POINTS*sizeof(double));
+		// double* distances 		= (double*)malloc(NUM_POINTS*sizeof(double));
+		double* distances; // Using page-locked memory for distances
+		cudaHostAlloc((void**)&distances,NUM_POINTS*sizeof(double),cudaHostAllocDefault);
 		double* centers 		= (double*)malloc(NUM_CLUSTER*DIMENSION*sizeof(double));
 		double* rnd 			= (double*)malloc(2*N*sizeof(double));
 		double* multiset    	= (double*)malloc(N*DIMENSION*sizeof(double));
 		double* partition_sums 	= (double*)malloc(numGPUThreads*sizeof(double));
 		double* dev_distances;
 		double* dev_partition_sums;
-		double* dev_centers;
+		// double* dev_centers;
 		checkCudaErrors(cudaMalloc((void**)&dev_distances,NUM_POINTS*sizeof(double)));
 		checkCudaErrors(cudaMalloc((void**)&dev_partition_sums,numGPUThreads*sizeof(double)));
-		checkCudaErrors(cudaMalloc((void**)&dev_centers,NUM_CLUSTER*DIMENSION*sizeof(double)));
+		// checkCudaErrors(cudaMalloc((void**)&dev_centers,NUM_CLUSTER*DIMENSION*sizeof(double))); // No need when using constant memory
 		
+		// cudaEvent_t stopEvent;
+		// cudaEventCreate( &stopEvent );
+
 		// initialize the initial centers
 		if(method == 2) // d2-seeding
 		{  
 			// all points have a weight of one. This is an unweighted kmeans++ problem
 			// ---------------------- GPU-Based Implementation Start ------------------------------------
 			cudaProfilerStart();
+			// cudaStream_t stream_1, stream_2;
+			// cudaStreamCreate( &stream_1 );
+			// cudaStreamCreate( &stream_2 );
 			
 			// First choosing the first point uniformly at random, no need to sample N points and all here
 			float tempRand = ((double) rand())/RAND_MAX;
 			int tempPointIndex = tempRand*NUM_POINTS;
-			checkCudaErrors(cudaMemcpy(dev_centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double),cudaMemcpyHostToDevice));
+			checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double),0,cudaMemcpyHostToDevice));
+			// checkCudaErrors(cudaMemcpy(dev_centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double),cudaMemcpyHostToDevice));
 
 			double compDistTime = 0, makeCumulativeTime = 0, samplingTime = 0, meanHeuristicTime = 0;
 			for(i = 1; i < NUM_CLUSTER; i++)
 			{
 				struct timeval sample_start,sample_end;
 				gettimeofday(&sample_start,NULL);
-				comp_dist<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, dev_centers, i, NUM_POINTS, DIMENSION, numGPUThreads);
+				// comp_dist<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, dev_centers, i, NUM_POINTS, DIMENSION, numGPUThreads);
+				comp_dist_glbl<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, i, NUM_POINTS, DIMENSION, numGPUThreads);
 				
 				// copy back to host memory for sampling purpose
 				cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(double),cudaMemcpyDeviceToHost);
-				cudaMemcpy(partition_sums,dev_partition_sums,numGPUThreads*sizeof(double),cudaMemcpyDeviceToHost);
-				cudaMemcpy(centers,dev_centers,NUM_CLUSTER*DIMENSION*sizeof(double),cudaMemcpyDeviceToHost); // for debugging purposes
+				cudaMemcpy(partition_sums,dev_partition_sums,numGPUThreads*sizeof(double),cudaMemcpyDeviceToHost);	
+				// No need to copy back centers to host, this was done for debugging purposes only
+				// cudaMemcpy(centers,dev_centers,NUM_CLUSTER*DIMENSION*sizeof(double),cudaMemcpyDeviceToHost); // for debugging purposes
+				
+				// cudaEventRecord( stopEvent,0);
 				gettimeofday(&sample_end,NULL);
-				printf("Time taken for comp_dist::\t%d\t%f\n",i,get_time_diff(sample_start,sample_end));
+				// cudaEventSynchronize( stopEvent );
+				// printf("Time taken for comp_dist::\t%d\t%f\n",i,get_time_diff(sample_start,sample_end));
 				compDistTime += get_time_diff(sample_start,sample_end);
 				// Make it cumulative for sampling purpose, can be done on GPU as well
 				gettimeofday(&sample_start,NULL);
@@ -163,36 +178,36 @@ int main(int argc, char const *argv[])
 					partition_sums[j] += partition_sums[j-1];
 				}
 				gettimeofday(&sample_end,NULL);
-				printf("Time taken to make cumulative::\t%d\t%f\n",i,get_time_diff(sample_start,sample_end));
+				// printf("Time taken to make cumulative::\t%d\t%f\n",i,get_time_diff(sample_start,sample_end));
 				makeCumulativeTime += get_time_diff(sample_start,sample_end);
 				
 				int per_thread = (NUM_POINTS + numGPUThreads-1)/numGPUThreads;
 				// double tempSum = 0;
-				// printf("numGPUThreads::%d\n",numGPUThreads);
-				// printf("per_thread::%d\n",per_thread);
-				// printf("per_thread::%d\n",NUM_POINTS/numGPUThreads);
-				// for (j = (numGPUThreads-1)*per_thread; j < NUM_POINTS; ++j)
-				// {
-				// 	if(j % per_thread == 0)
-				// 		tempSum = 0;
+					// printf("numGPUThreads::%d\n",numGPUThreads);
+					// printf("per_thread::%d\n",per_thread);
+					// printf("per_thread::%d\n",NUM_POINTS/numGPUThreads);
+					// for (j = (numGPUThreads-1)*per_thread; j < NUM_POINTS; ++j)
+					// {
+					// 	if(j % per_thread == 0)
+					// 		tempSum = 0;
 
-				// 	double local_dist = 0,min_dist = DBL_MAX;
-				// 	for (int k = 0; k < i; ++k)
-				// 	{
-				// 		local_dist 	= distance(centers + k*DIMENSION, data + j*DIMENSION);
-				// 		min_dist 	= min(min_dist,local_dist*local_dist);
-				// 	}
-				// 	tempSum += min_dist;
-				// 	printf("%d\t%f\n",j,distances[j]);
+					// 	double local_dist = 0,min_dist = DBL_MAX;
+					// 	for (int k = 0; k < i; ++k)
+					// 	{
+					// 		local_dist 	= distance(centers + k*DIMENSION, data + j*DIMENSION);
+					// 		min_dist 	= min(min_dist,local_dist*local_dist);
+					// 	}
+					// 	tempSum += min_dist;
+					// 	printf("%d\t%f\n",j,distances[j]);
 
-				// 	// if((j+1) % per_thread == 0)
-				// 	// {
-				// 	// 	// printf("\t%d\t%f\t%f\n",j,tempSum,distances[j]);
-				// 	// 	printf("%d\t%f\n",j,distances[j]);
-				// 	// 	printf("%d\t%f\n\n",j/per_thread,partition_sums[j/per_thread] );						
-				// 	// }
-				// 	// else
-				// 	// 	printf("%d\t%f\t%f\n",j,tempSum,distances[j]);
+					// 	// if((j+1) % per_thread == 0)
+					// 	// {
+					// 	// 	// printf("\t%d\t%f\t%f\n",j,tempSum,distances[j]);
+					// 	// 	printf("%d\t%f\n",j,distances[j]);
+					// 	// 	printf("%d\t%f\n\n",j/per_thread,partition_sums[j/per_thread] );						
+					// 	// }
+					// 	// else
+					// 	// 	printf("%d\t%f\t%f\n",j,tempSum,distances[j]);
 				// }
 
 				gettimeofday(&sample_start,NULL);
@@ -217,14 +232,16 @@ int main(int argc, char const *argv[])
 					}
 				}
 				gettimeofday(&sample_end,NULL);
-				printf("Time taken for sampling::\t%d\t%f\n",i,get_time_diff(sample_start,sample_end));
+				// printf("Time taken for sampling::\t%d\t%f\n",i,get_time_diff(sample_start,sample_end));
 				samplingTime += get_time_diff(sample_start,sample_end);
 
 				gettimeofday(&sample_start,NULL);
 				double* nextCenter = mean_heuristic(multiset,N);
-				checkCudaErrors(cudaMemcpy(dev_centers + i*DIMENSION, nextCenter, DIMENSION*sizeof(double),cudaMemcpyHostToDevice));
+				checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global , nextCenter, DIMENSION*sizeof(double), i*DIMENSION, cudaMemcpyHostToDevice));
+				// checkCudaErrors(cudaMemcpy(dev_centers + i*DIMENSION , nextCenter, DIMENSION*sizeof(double), cudaMemcpyHostToDevice));
+
 				gettimeofday(&sample_end,NULL);
-				printf("Time taken for mean heuristic::\t%d\t%f\n",i,get_time_diff(sample_start,sample_end));
+				// printf("Time taken for mean heuristic::\t%d\t%f\n",i,get_time_diff(sample_start,sample_end));
 				meanHeuristicTime += get_time_diff(sample_start,sample_end);
 			}
 			printf("compDistTime\t\t%2.5f\t%2.5f\n",compDistTime,compDistTime/(NUM_CLUSTER-1) );
@@ -232,6 +249,7 @@ int main(int argc, char const *argv[])
 			printf("samplingTime\t\t%2.5f\t%2.5f\n",samplingTime,samplingTime/(NUM_CLUSTER-1) );
 			printf("meanHeuristicTime\t%2.5f\t%2.5f\n",meanHeuristicTime,meanHeuristicTime/(NUM_CLUSTER-1) );
 			cudaProfilerStop();
+			exit(0);
 			// ---------------------- GPU-Based Implementation End --------------------------------------
 			
 
@@ -399,11 +417,17 @@ int main(int argc, char const *argv[])
 		}
 		fclose(logger);
 
-		free(centers);
 		free(cluster_counts);
 		free(cluster_sums);
 		free(cluster_counts_pointers);
 		free(cluster_sums_pointers);
+
+		// free(centers);
+		cudaFreeHost(distances); // free this way when using page-locked memory for distances
+		free(distances);
+		free(rnd);
+		free(multiset);
+		free(partition_sums);
 	}
 
 	logger = fopen(resultFile,"w");
@@ -444,7 +468,8 @@ int sample_from_distribution (double* probabilities, int startIndex, int endInde
 // Can be optimized by using distances calculated in previous iteration, i.e. when the previous center was sampled
 // This does not do any sampling business
 // Need not call this function when centerIter = 0,
-__global__ void comp_dist(double* dev_data,double* dev_distances,double* dev_partition_sums, double* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads)
+// Not optimized to use distance calculted in previous iteration to calculate distance/cost for points 
+__global__ void comp_dist_2(double* dev_data,double* dev_distances,double* dev_partition_sums, double* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads)
 {
 	// Starting off with very simplistic 1-D threads blocks and 1-D grids
 	int tid = threadIdx.x + blockIdx.x*blockDim.x;
@@ -469,6 +494,94 @@ __global__ void comp_dist(double* dev_data,double* dev_distances,double* dev_par
 		dev_distances[dataIndex] = min_dist*min_dist + prev_val;
 		// dev_distances[dataIndex] = min_dist*min_dist;
 		prev_val = dev_distances[dataIndex];
+	}
+	dev_partition_sums[tid] = prev_val;
+}
+
+// Optimised to use previous distance values to calculate min_dist for points in next iteration
+__global__ void comp_dist(double* dev_data,double* dev_distances,double* dev_partition_sums, double* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads)
+{
+	// Starting off with very simplistic 1-D threads blocks and 1-D grids
+	int tid = threadIdx.x + blockIdx.x*blockDim.x;
+	int per_thread = (numPoints + numGPUThreads - 1)/numGPUThreads;// Term in the numerator is added to that we can get ceiling of numPoints/numGPUThreads
+	int startIndex = tid*per_thread;
+	int endIndex = min((tid + 1)*per_thread,numPoints);
+	double min_dist = DBL_MAX, local_dist,temp,prev_val = 0,old_prev_val=0;
+	for (int dataIndex = startIndex; dataIndex < endIndex; ++dataIndex)
+	{
+
+		if (centerIter == 1) // This is the first time dev_distances will get its values
+		{
+			min_dist 	= 0;
+			int i = 0;
+			for (int j = 0; j < dev_dimension; ++j)
+			{
+				temp = dev_data[dataIndex*dev_dimension + j] - dev_centers[i*dev_dimension + j];
+				min_dist += temp*temp;
+			}
+			dev_distances[dataIndex] = min_dist*min_dist + prev_val; // make it cumulative as you calculate it
+			prev_val = dev_distances[dataIndex];
+		}
+		else
+		{
+			int i = centerIter - 1; // i denotes the last center that was added to the list of centers
+			min_dist 	= dev_distances[dataIndex] - old_prev_val;
+			old_prev_val= dev_distances[dataIndex];
+			local_dist 	= 0;
+			for (int j = 0; j < dev_dimension; ++j)
+			{
+				temp = dev_data[dataIndex*dev_dimension + j] - dev_centers[i*dev_dimension + j];
+				local_dist += temp*temp;
+			}
+			min_dist = min(min_dist,local_dist*local_dist);
+			dev_distances[dataIndex] = min_dist + prev_val;  // No need to square min_dist here, it is already squared value
+			prev_val = dev_distances[dataIndex];
+		}
+		
+	}
+	dev_partition_sums[tid] = prev_val;
+}
+
+// Optimised to use previous distance values to calculate min_dist for points in next iteration
+// Also makes use of constant memory for storing centers
+__global__ void comp_dist_glbl(double* dev_data,double* dev_distances,double* dev_partition_sums,int centerIter,int numPoints,int dev_dimension,int numGPUThreads)
+{
+	// Starting off with very simplistic 1-D threads blocks and 1-D grids
+	int tid = threadIdx.x + blockIdx.x*blockDim.x;
+	int per_thread = (numPoints + numGPUThreads - 1)/numGPUThreads;// Term in the numerator is added to that we can get ceiling of numPoints/numGPUThreads
+	int startIndex = tid*per_thread;
+	int endIndex = min((tid + 1)*per_thread,numPoints);
+	double min_dist = DBL_MAX, local_dist,temp,prev_val = 0,old_prev_val=0;
+	for (int dataIndex = startIndex; dataIndex < endIndex; ++dataIndex)
+	{
+
+		if (centerIter == 1) // This is the first time dev_distances will get its values
+		{
+			min_dist = 0;
+			int i = 0;
+			for (int j = 0; j < dev_dimension; ++j)
+			{
+				temp = dev_data[dataIndex*dev_dimension + j] - dev_centers_global[i*dev_dimension + j];
+				min_dist += temp*temp;
+			}
+			dev_distances[dataIndex] = min_dist*min_dist + prev_val; // make it cumulative as you calculate it
+			prev_val = dev_distances[dataIndex];
+		}
+		else
+		{
+			int i = centerIter - 1; // i denotes the last center that was added to the list of centers
+			min_dist 	= dev_distances[dataIndex] - old_prev_val;
+			old_prev_val= dev_distances[dataIndex];
+			local_dist 	= 0;
+			for (int j = 0; j < dev_dimension; ++j)
+			{
+				temp = dev_data[dataIndex*dev_dimension + j] - dev_centers_global[i*dev_dimension + j];
+				local_dist += temp*temp;
+			}
+			min_dist = min(min_dist,local_dist*local_dist);
+			dev_distances[dataIndex] = min_dist + prev_val;  // No need to square min_dist here, it is already squared value
+			prev_val = dev_distances[dataIndex];
+		}
 	}
 	dev_partition_sums[tid] = prev_val;
 }
