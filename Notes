@@ -14,3 +14,30 @@ Distribution of workload between threads is wrongly done in d2_sample.
 This has been working fine all this time because number of threads was a factor of NUM_POINTS and so no points were left out.
 If it is not the case then some points are left out towards the last for which no thread does the calculation.
 I have used the same thing everywhere so may be I need to correct it so that if num_threads is not a factor of NUM_POINTS, things still work correctly
+
+Date 19 March:
+nvprof files:
+outFile_optimized_pinnedMem_constMem:
+	Pinned distance memory for efficient transfer
+	ConstMem for storing centers chosen so far, on GPUs
+	Using cost computed in last iteration to compute cost in current iteration
+	Removing print statements from the loop that had all this seeding code
+
+outFile_optimized_pinnedMem:
+	Pinned distance memory for efficient transfer
+	Using cost computed in last iteration to compute cost in current iteration
+	Removing print statements from the loop that had all this seeding code
+
+outFile_optimized_unpinnedMem:
+	Using cost computed in last iteration to compute cost in current iteration
+	Removing print statements from the loop that had all this seeding code
+
+outFile_optimized_print:
+	Using cost computed in last iteration to compute cost in current iteration
+	Has print statements from the loop that had all this seeding code
+
+outFile_unoptimized:
+	NOT using cost computed in last iteration to compute cost in current iteration
+	Has print statements from the loop that had all this seeding code
+
+----------------------------------------------------------------
