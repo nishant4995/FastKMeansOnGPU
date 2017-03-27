@@ -149,16 +149,16 @@ int main(int argc, char const *argv[])
 			
 			// First choosing the first point uniformly at random, no need to sample N points and all here
 			int tempPointIndex 	= (((double) rand())/RAND_MAX)*NUM_POINTS;
-			checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double),0,cudaMemcpyHostToDevice));
-			// checkCudaErrors(cudaMemcpy(dev_centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double),cudaMemcpyHostToDevice));
+			// checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double),0,cudaMemcpyHostToDevice));
+			checkCudaErrors(cudaMemcpy(dev_centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double),cudaMemcpyHostToDevice));
 
 			double compDistTime = 0, makeCumulativeTime = 0, samplingTime = 0, meanHeuristicTime = 0;
 			for(i = 1; i < NUM_CLUSTER; i++)
 			{
 				struct timeval sample_start,sample_end;
 				gettimeofday(&sample_start,NULL);
-				// comp_dist<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, dev_centers, i, NUM_POINTS, DIMENSION, numGPUThreads);
-				comp_dist_glbl<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, i, NUM_POINTS, DIMENSION, numGPUThreads);
+				comp_dist<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, dev_centers, i, NUM_POINTS, DIMENSION, numGPUThreads);
+				// comp_dist_glbl<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, i, NUM_POINTS, DIMENSION, numGPUThreads);
 
 				for(j = 0; j < N; ++j)
 				{
@@ -235,10 +235,9 @@ int main(int argc, char const *argv[])
 				gettimeofday(&sample_start,NULL);
 				double* nextCenter = mean_heuristic(multiset,N);
 				memcpy(centers + i*DIMENSION,nextCenter,DIMENSION*sizeof(double));
-				checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global , nextCenter, DIMENSION*sizeof(double), i*DIMENSION, cudaMemcpyHostToDevice));
-				// checkCudaErrors(cudaMemcpy(dev_centers + i*DIMENSION , nextCenter, DIMENSION*sizeof(double), cudaMemcpyHostToDevice));
+				// checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global , nextCenter, DIMENSION*sizeof(double), i*DIMENSION, cudaMemcpyHostToDevice));
+				checkCudaErrors(cudaMemcpy(dev_centers + i*DIMENSION , nextCenter, DIMENSION*sizeof(double), cudaMemcpyHostToDevice));
 				gettimeofday(&sample_end,NULL);
-
 				meanHeuristicTime += get_time_diff(sample_start,sample_end);
 			}
 			printf("compDistTime\t\t%2.5f\t%2.5f\n",compDistTime,compDistTime/(NUM_CLUSTER-1) );
