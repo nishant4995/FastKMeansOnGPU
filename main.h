@@ -82,10 +82,13 @@ __global__ void kernelAddConstant(int *g_a, const int b);
 int correctResult(int *data, const int n, const int b);
 int main_check();
 __global__ void comp_dist(double* dev_data,double* dev_distances,double* dev_partition_sums, double* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
+__global__ void comp_dist_2(double* dev_data,double* dev_distances,double* dev_partition_sums, double* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
 __global__ void comp_dist_glbl(double* dev_data,double* dev_distances,double* dev_partition_sums,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
 int sample_from_distribution (double* probabilities, int startIndex, int endIndex, double prob);
+__global__ void sample_from_distribution_gpu(double* dev_partition_sums, double* dev_distances, int* dev_sampled_indices, double* dev_rnd,int per_thread, int dev_NUM_POINTS, int dev_N);
 double distance(double* p1, double* p2);
 double* mean_heuristic(double* multiset,int multisetSize);
 double* d2_sample(double* data,double* centers,int numPts, int numSamples, int size);
+double* d2_sample_2(double* data,double* centers,int numPts, int numSamples, int size, double* distances);
 void write_centers_to_file(double* centers);
 #endif
