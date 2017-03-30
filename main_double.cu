@@ -6,7 +6,7 @@
 // mt19937 gen(rd());
 // unsigned int max_val = gen.max();
 int numThreads = 1;
-__constant__ float dev_centers_global[NUM_CLUSTER*DIMENSION]; // For using constant memory
+__constant__ double dev_centers_global[NUM_CLUSTER*DIMENSION]; // For using constant memory
 int main(int argc, char const *argv[])
 {
 	// Currently no argument processing logic, will always run birch1 for 2 times with N=10k
@@ -16,7 +16,7 @@ int main(int argc, char const *argv[])
 
 		// for k-means parallel
 		int rounds = 5;
-		float oversampling = NUM_CLUSTER;
+		double oversampling = NUM_CLUSTER;
 		oversampling = 2*oversampling;
 
 		char dataFileName[100];
@@ -75,42 +75,42 @@ int main(int argc, char const *argv[])
 
 		struct timeval start,end;
 		// collect stats about all relevant parameters
-		float initTime[numRuns];
-		float iterTime[numRuns];
-		float totalTime[numRuns];
-		float initCost[numRuns];
-		float finalCost[numRuns];
-		float numIter[numRuns];
+		double initTime[numRuns];
+		double iterTime[numRuns];
+		double totalTime[numRuns];
+		double initCost[numRuns];
+		double finalCost[numRuns];
+		double numIter[numRuns];
 
 		// read the data into a vector of "vector"
 
-		float* data;
+		double* data;
 		FILE* reader;
 		int i = 0,j = 0;
-		data 	= (float*)malloc(NUM_POINTS*DIMENSION*sizeof(float));
+		data 	= (double*)malloc(NUM_POINTS*DIMENSION*sizeof(double));
 		reader 	= fopen(dataFileName,"r");
 		while(i < NUM_POINTS)
 		{
 			j = 0;
 			while(j < DIMENSION)
 			{
-				fscanf(reader,"\t%f",&(data[i*DIMENSION + j]));
+				fscanf(reader,"\t%lf",&(data[i*DIMENSION + j]));
 				j++;
 			}
 			i++;
 		}
 
 	// Copy data onto device memory
-	float* dev_data;
-	cudaMalloc((void**)&dev_data,DIMENSION*NUM_POINTS*sizeof(float));
-	cudaMemcpy(dev_data,data,DIMENSION*NUM_POINTS*sizeof(float),cudaMemcpyHostToDevice);
+	double* dev_data;
+	cudaMalloc((void**)&dev_data,DIMENSION*NUM_POINTS*sizeof(double));
+	cudaMemcpy(dev_data,data,DIMENSION*NUM_POINTS*sizeof(double),cudaMemcpyHostToDevice);
 
 	FILE* logger;
 	int runNum;
 	for(runNum = 0; runNum < numRuns ; runNum++)
 	{
-		float samplingTime_1[NUM_CLUSTER];
-		float samplingTime_2[NUM_CLUSTER];
+		double samplingTime_1[NUM_CLUSTER];
+		double samplingTime_2[NUM_CLUSTER];
 		printf("Running runNum::%d\n",runNum );
 		gettimeofday(&start,NULL);
 
@@ -120,27 +120,27 @@ int main(int argc, char const *argv[])
 		int numSampleTperB 		= 32;
 		int numGPUThreads 		= numBlocks*numThreadsPerBlock;
 
-		// float* distances_debug	= (float*)malloc(NUM_POINTS*sizeof(float));
-		float* distances; // Using page-locked memory for distances
-		cudaHostAlloc((void**)&distances,NUM_POINTS*sizeof(float),cudaHostAllocDefault);
-		float* centers 		= (float*)malloc(NUM_CLUSTER*DIMENSION*sizeof(float));
-		float* rnd 			= (float*)malloc(2*N*sizeof(float));
-		float* multiset    	= (float*)malloc(N*DIMENSION*sizeof(float));
-		float* partition_sums 	= (float*)malloc(numGPUThreads*sizeof(float));
-		// float* partition_sums_debug 	= (float*)malloc(numGPUThreads*sizeof(float));
+		// double* distances_debug	= (double*)malloc(NUM_POINTS*sizeof(double));
+		double* distances; // Using page-locked memory for distances
+		cudaHostAlloc((void**)&distances,NUM_POINTS*sizeof(double),cudaHostAllocDefault);
+		double* centers 		= (double*)malloc(NUM_CLUSTER*DIMENSION*sizeof(double));
+		double* rnd 			= (double*)malloc(2*N*sizeof(double));
+		double* multiset    	= (double*)malloc(N*DIMENSION*sizeof(double));
+		double* partition_sums 	= (double*)malloc(numGPUThreads*sizeof(double));
+		// double* partition_sums_debug 	= (double*)malloc(numGPUThreads*sizeof(double));
 		int* 	sampled_indices = (int*)malloc(N*sizeof(int));
 
-		float* dev_distances;
-		float* dev_partition_sums;
-		float* dev_rnd;
+		double* dev_distances;
+		double* dev_partition_sums;
+		double* dev_rnd;
 		int* 	dev_sampled_indices;
 
-		// float* dev_centers; // When not using constant memory for centers
-		checkCudaErrors(cudaMalloc((void**)&dev_distances,NUM_POINTS*sizeof(float)));
-		checkCudaErrors(cudaMalloc((void**)&dev_partition_sums,numGPUThreads*sizeof(float)));
+		// double* dev_centers; // When not using constant memory for centers
+		checkCudaErrors(cudaMalloc((void**)&dev_distances,NUM_POINTS*sizeof(double)));
+		checkCudaErrors(cudaMalloc((void**)&dev_partition_sums,numGPUThreads*sizeof(double)));
 		checkCudaErrors(cudaMalloc((void**)&dev_sampled_indices,N*sizeof(int)));
-		checkCudaErrors(cudaMalloc((void**)&dev_rnd,2*N*sizeof(float)));
-		// checkCudaErrors(cudaMalloc((void**)&dev_centers,NUM_CLUSTER*DIMENSION*sizeof(float))); // No need when using constant memory
+		checkCudaErrors(cudaMalloc((void**)&dev_rnd,2*N*sizeof(double)));
+		// checkCudaErrors(cudaMalloc((void**)&dev_centers,NUM_CLUSTER*DIMENSION*sizeof(double))); // No need when using constant memory
 
 		// initialize the initial centers
 		if(method == 2) // d2-seeding
@@ -149,32 +149,32 @@ int main(int argc, char const *argv[])
 			cudaProfilerStart();
 			
 			// First choosing the first point uniformly at random, no need to sample N points and all here
-			int tempPointIndex 	= (((float) rand())/RAND_MAX)*NUM_POINTS;
-			memcpy(centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(float));
-			checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(float),0,cudaMemcpyHostToDevice));
-			// checkCudaErrors(cudaMemcpy(dev_centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(float),cudaMemcpyHostToDevice));
+			int tempPointIndex 	= (((double) rand())/RAND_MAX)*NUM_POINTS;
+			memcpy(centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double));
+			checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double),0,cudaMemcpyHostToDevice));
+			// checkCudaErrors(cudaMemcpy(dev_centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double),cudaMemcpyHostToDevice));
 
-			float compDistTime = 0, makeCumulativeTime = 0, samplingTime = 0, meanHeuristicTime = 0;
+			double compDistTime = 0, makeCumulativeTime = 0, samplingTime = 0, meanHeuristicTime = 0;
 			for(i = 1; i < NUM_CLUSTER; i++)
 			{
 				struct timeval sample_start,sample_end;
 				gettimeofday(&sample_start,NULL);
 				for(j = 0; j < N; ++j)
 				{
-					rnd[2*j] 	= ((float) rand())/RAND_MAX;
-					rnd[2*j+1] 	= ((float) rand())/RAND_MAX;
+					rnd[2*j] 	= ((double) rand())/RAND_MAX;
+					rnd[2*j+1] 	= ((double) rand())/RAND_MAX;
 				}
-				cudaMemcpy(dev_rnd,rnd,2*N*sizeof(float),cudaMemcpyHostToDevice);// Can be overlapped with computation
+				cudaMemcpy(dev_rnd,rnd,2*N*sizeof(double),cudaMemcpyHostToDevice);// Can be overlapped with computation
 				// comp_dist<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, dev_centers, i, NUM_POINTS, DIMENSION, numGPUThreads);
 				
 				// For blocked access pattern
 					// comp_dist_glbl<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, i, NUM_POINTS, DIMENSION, numGPUThreads);
-					// cudaMemcpy(partition_sums,dev_partition_sums,numGPUThreads*sizeof(float),cudaMemcpyDeviceToHost);	
+					// cudaMemcpy(partition_sums,dev_partition_sums,numGPUThreads*sizeof(double),cudaMemcpyDeviceToHost);	
 					// for (j = 1; j < numGPUThreads; ++j) // Need to do this scan operation on GPU only, but testing things first
 					// {
 					// 	partition_sums[j] += partition_sums[j-1];
 					// }
-					// cudaMemcpy(dev_partition_sums,partition_sums,numGPUThreads*sizeof(float),cudaMemcpyHostToDevice);
+					// cudaMemcpy(dev_partition_sums,partition_sums,numGPUThreads*sizeof(double),cudaMemcpyHostToDevice);
 
 					// int per_thread = (NUM_POINTS + numGPUThreads-1)/numGPUThreads;
 					// sample_from_distribution_gpu<<<numSampleBlocks,numSampleTperB>>>(dev_partition_sums, dev_distances, dev_sampled_indices, dev_rnd, per_thread, NUM_POINTS, N);
@@ -182,18 +182,18 @@ int main(int argc, char const *argv[])
 				// For strided memory access pattern
 					comp_dist_glbl_strided<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, i, NUM_POINTS, DIMENSION, numGPUThreads);
 					
-					cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(float),cudaMemcpyDeviceToHost);
+					cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(double),cudaMemcpyDeviceToHost);
 					for (j = 1; j < NUM_POINTS; ++j)
 					{
 						distances[j] += distances[j-1];
 					}
-					cudaMemcpy(dev_distances,distances,NUM_POINTS*sizeof(float),cudaMemcpyHostToDevice);
+					cudaMemcpy(dev_distances,distances,NUM_POINTS*sizeof(double),cudaMemcpyHostToDevice);
 					sample_from_distribution_gpu_strided<<<numSampleBlocks,numSampleTperB>>>(dev_distances, dev_sampled_indices, dev_rnd, NUM_POINTS, N);
 					
 					// // Division of distance array into blocks so that sampling is similar to blocked cost calculation approach
 					// int per_thread = (NUM_POINTS + numGPUThreads-1)/numGPUThreads;
-					// cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(float),cudaMemcpyDeviceToHost);
-					// float prev_val = distances[0],prev_part_val=0;
+					// cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(double),cudaMemcpyDeviceToHost);
+					// double prev_val = distances[0],prev_part_val=0;
 					// int p_ctr = 0;
 					// for (j = 1; j < NUM_POINTS; ++j)
 					// {
@@ -215,8 +215,8 @@ int main(int argc, char const *argv[])
 					// 		prev_val = 0;
 					// 	}
 					// }
-					// cudaMemcpy(dev_distances,distances,NUM_POINTS*sizeof(float),cudaMemcpyHostToDevice);
-					// cudaMemcpy(dev_partition_sums,partition_sums,numGPUThreads*sizeof(float),cudaMemcpyHostToDevice);
+					// cudaMemcpy(dev_distances,distances,NUM_POINTS*sizeof(double),cudaMemcpyHostToDevice);
+					// cudaMemcpy(dev_partition_sums,partition_sums,numGPUThreads*sizeof(double),cudaMemcpyHostToDevice);
 					// sample_from_distribution_gpu<<<numSampleBlocks,numSampleTperB>>>(dev_partition_sums, dev_distances, dev_sampled_indices, dev_rnd, per_thread, NUM_POINTS, N);
 
 				// Copy back indices of sampled points, no need to copy those points as we have the data here as well
@@ -234,8 +234,8 @@ int main(int argc, char const *argv[])
 				
 				// Code for sampling on CPU (first GPU implementation)
 					// // copy back to host memory for sampling purpose, 
-					// cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(float),cudaMemcpyDeviceToHost);
-					// cudaMemcpy(partition_sums,dev_partition_sums,numGPUThreads*sizeof(float),cudaMemcpyDeviceToHost);	
+					// cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(double),cudaMemcpyDeviceToHost);
+					// cudaMemcpy(partition_sums,dev_partition_sums,numGPUThreads*sizeof(double),cudaMemcpyDeviceToHost);	
 
 					// // Make it cumulative for sampling purpose, can be done on GPU as well
 				
@@ -253,8 +253,8 @@ int main(int argc, char const *argv[])
 					// gettimeofday(&sample_start,NULL);
 					// for(j = 0 ; j < N ; j++)
 					// {
-					// 	rnd[2*j] 	= ((float) rand())/RAND_MAX;
-					// 	rnd[2*j+1] 	= ((float) rand())/RAND_MAX;
+					// 	rnd[2*j] 	= ((double) rand())/RAND_MAX;
+					// 	rnd[2*j+1] 	= ((double) rand())/RAND_MAX;
 
 					// 	int numValidPartitions = NUM_POINTS/per_thread + 1;
 					// 	// first pick a block from the local_sums distribution
@@ -275,10 +275,10 @@ int main(int argc, char const *argv[])
 					// samplingTime += get_time_diff(sample_start,sample_end);
 
 				gettimeofday(&sample_start,NULL);
-				float* nextCenter = mean_heuristic(multiset,N);
-				memcpy(centers + i*DIMENSION,nextCenter,DIMENSION*sizeof(float));
-				checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global , nextCenter, DIMENSION*sizeof(float), i*DIMENSION*sizeof(float), cudaMemcpyHostToDevice));
-				// checkCudaErrors(cudaMemcpy(dev_centers + i*DIMENSION , nextCenter, DIMENSION*sizeof(float), cudaMemcpyHostToDevice));
+				double* nextCenter = mean_heuristic(multiset,N);
+				memcpy(centers + i*DIMENSION,nextCenter,DIMENSION*sizeof(double));
+				checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global , nextCenter, DIMENSION*sizeof(double), i*DIMENSION*sizeof(double), cudaMemcpyHostToDevice));
+				// checkCudaErrors(cudaMemcpy(dev_centers + i*DIMENSION , nextCenter, DIMENSION*sizeof(double), cudaMemcpyHostToDevice));
 				gettimeofday(&sample_end,NULL);
 				meanHeuristicTime += get_time_diff(sample_start,sample_end);
 				
@@ -301,7 +301,7 @@ int main(int argc, char const *argv[])
 				// 	printf("Time taken for d2_sample::%d-->%f\n",i,get_time_diff(sample_start,sample_end));
 				// 	samplingTime_1[i] = get_time_diff(sample_start,sample_end);
 				// 	gettimeofday(&sample_start,NULL);
-				// 	float* nextCenter = mean_heuristic(multiset,N);
+				// 	double* nextCenter = mean_heuristic(multiset,N);
 				// 	for (int j = 0; j < DIMENSION; ++j)
 				// 	{
 				// 		centers[i*DIMENSION + j] = nextCenter[j];
@@ -324,7 +324,7 @@ int main(int argc, char const *argv[])
 		// now the Lloyd's iterations
 		// first we need to figure out the assignments
 		gettimeofday(&start,NULL);
-		float prev_cost = FLT_MAX;
+		double prev_cost = DBL_MAX;
 		int iteration = 0;
 
 		char tempFileName[100];
@@ -333,13 +333,13 @@ int main(int argc, char const *argv[])
 
 		// Can make first two static arrays
 		int* cluster_counts 	= (int*)malloc(NUM_CLUSTER*sizeof(int)); // number of points assigned to each cluster
-		float* cluster_sums	= (float*)malloc(DIMENSION*NUM_CLUSTER*sizeof(float)); // sum of points assigned to each cluster
+		double* cluster_sums	= (double*)malloc(DIMENSION*NUM_CLUSTER*sizeof(double)); // sum of points assigned to each cluster
 		int** cluster_counts_pointers 	= (int**)malloc(numThreads*sizeof(int*)); // pointers to local "number of points assigned to each cluster"
-		float** cluster_sums_pointers 	= (float**)malloc(numThreads*sizeof(float*)); // pointers to local "sum of points assigned to each cluster"
+		double** cluster_sums_pointers 	= (double**)malloc(numThreads*sizeof(double*)); // pointers to local "sum of points assigned to each cluster"
 		
 		while(true)
 		{
-			iteration++;
+			iteration++;	
     		// initially, set everything to zero
     		for(int i = 0; i < NUM_CLUSTER; i++)
     		{
@@ -350,12 +350,12 @@ int main(int argc, char const *argv[])
 				}
 			}
 			// cost according to the current solution
-			float current_cost = 0.0;
+			double current_cost = 0.0;
     		#pragma omp parallel reduction(+: current_cost) 
     		{
     			int tid = omp_get_thread_num();
     			int local_cluster_counts[NUM_CLUSTER]; // local "number of points assigned to each cluster"
-    			float local_cluster_sums[DIMENSION*NUM_CLUSTER]; // local "sum of points assigned to each cluster"
+    			double local_cluster_sums[DIMENSION*NUM_CLUSTER]; // local "sum of points assigned to each cluster"
     			for(int i = 0; i < NUM_CLUSTER; i++)
     			{
     				local_cluster_counts[i] = 0;
@@ -368,15 +368,15 @@ int main(int argc, char const *argv[])
     			cluster_counts_pointers[tid] 	= local_cluster_counts; // set the pointer
     			cluster_sums_pointers[tid] 		= local_cluster_sums; // set the pointer
     			int index;
-    			float min_dist;
-    			float current_dist;
+    			double min_dist;
+    			double current_dist;
     			// assign each point to their cluster center in parallel. 
     			// update the cost of current solution and keep updating local counts and sums
     			#pragma omp for schedule(static)
     			for (int i = 0; i < NUM_POINTS; i++) 
     			{
     				index = 0;
-    				min_dist = FLT_MAX;
+    				min_dist = DBL_MAX;
     				current_dist = 0;
     				for(int j = 0; j < NUM_CLUSTER; j++)
     				{
@@ -477,7 +477,7 @@ int main(int argc, char const *argv[])
 	return 0;
 }
 
-int sample_from_distribution(float* probabilities, int startIndex, int endIndex, float prob) 
+int sample_from_distribution(double* probabilities, int startIndex, int endIndex, double prob) 
 {
     int start = startIndex,end = endIndex - 1;
     int mid;
@@ -501,12 +501,12 @@ int sample_from_distribution(float* probabilities, int startIndex, int endIndex,
 }
 
 // GPU version of sampling code
-__global__ void sample_from_distribution_gpu(float* dev_partition_sums, float* dev_distances, int* dev_sampled_indices, float* dev_rnd,int per_thread, int dev_NUM_POINTS, int dev_N) 
+__global__ void sample_from_distribution_gpu(double* dev_partition_sums, double* dev_distances, int* dev_sampled_indices, double* dev_rnd,int per_thread, int dev_NUM_POINTS, int dev_N) 
 {
 
 	int numValidPartitions = dev_NUM_POINTS/per_thread + 1;
 	int start,mid,end,groupNo,pointIndex;
-	float prob;
+	double prob;
 	int i = blockIdx.x*blockDim.x + threadIdx.x;
 	if( i < dev_N)
 	{
@@ -565,13 +565,13 @@ __global__ void sample_from_distribution_gpu(float* dev_partition_sums, float* d
 }
 
 // Sampling for case of strided memory access pattern, no dev_partition_sums here
-__global__ void sample_from_distribution_gpu_strided(float* dev_distances, int* dev_sampled_indices, float* dev_rnd, int dev_NUM_POINTS, int dev_N) 
+__global__ void sample_from_distribution_gpu_strided(double* dev_distances, int* dev_sampled_indices, double* dev_rnd, int dev_NUM_POINTS, int dev_N) 
 {
 	int i = blockIdx.x*blockDim.x + threadIdx.x;
 	if( i < dev_N)
 	{
 		int start,mid,end,pointIndex;
-		float prob;
+		double prob;
 		
 		// the start and end index of this block
 		// int startIndex 	= groupNo*per_thread;
@@ -610,7 +610,7 @@ __global__ void sample_from_distribution_gpu_strided(float* dev_distances, int* 
 // This does not do any sampling business
 // Need not call this function when centerIter = 0,
 // Not optimized to use distance calculted in previous iteration to calculate distance/cost for points 
-__global__ void comp_dist_2(float* dev_data,float* dev_distances,float* dev_partition_sums, float* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads)
+__global__ void comp_dist_2(double* dev_data,double* dev_distances,double* dev_partition_sums, double* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads)
 {
 	// Starting off with very simplistic 1-D threads blocks and 1-D grids
 	int tid = threadIdx.x + blockIdx.x*blockDim.x;
@@ -618,10 +618,10 @@ __global__ void comp_dist_2(float* dev_data,float* dev_distances,float* dev_part
 	int per_thread = (numPoints + numGPUThreads - 1)/numGPUThreads;// Term in the numerator is added to that we can get ceiling of numPoints/numGPUThreads
 	int startIndex = tid*per_thread;
 	int endIndex = min((tid + 1)*per_thread,numPoints);
-	float min_dist = FLT_MAX, local_dist,temp,prev_val = 0;
+	double min_dist = DBL_MAX, local_dist,temp,prev_val = 0;
 	for (int dataIndex = startIndex; dataIndex < endIndex; ++dataIndex)
 	{
-		min_dist = FLT_MAX;
+		min_dist = DBL_MAX;
 		for (int i = 0; i < centerIter; ++i)
 		{
 			local_dist = 0;
@@ -640,14 +640,14 @@ __global__ void comp_dist_2(float* dev_data,float* dev_distances,float* dev_part
 }
 
 // Optimised to use previous distance values to calculate min_dist for points in next iteration
-__global__ void comp_dist(float* dev_data,float* dev_distances,float* dev_partition_sums, float* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads)
+__global__ void comp_dist(double* dev_data,double* dev_distances,double* dev_partition_sums, double* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads)
 {
 	// Starting off with very simplistic 1-D threads blocks and 1-D grids
 	int tid = threadIdx.x + blockIdx.x*blockDim.x;
 	int per_thread = (numPoints + numGPUThreads - 1)/numGPUThreads;// Term in the numerator is added to that we can get ceiling of numPoints/numGPUThreads
 	int startIndex = tid*per_thread;
 	int endIndex = min((tid + 1)*per_thread,numPoints);
-	float min_dist = FLT_MAX, local_dist,temp,prev_val = 0,old_prev_val=0;
+	double min_dist = DBL_MAX, local_dist,temp,prev_val = 0,old_prev_val=0;
 	for (int dataIndex = startIndex; dataIndex < endIndex; ++dataIndex)
 	{
 
@@ -686,14 +686,14 @@ __global__ void comp_dist(float* dev_data,float* dev_distances,float* dev_partit
 
 // Optimised to use previous distance values to calculate min_dist for points in next iteration
 // Also makes use of constant memory for storing centers
-__global__ void comp_dist_glbl(float* dev_data,float* dev_distances,float* dev_partition_sums,int centerIter,int numPoints,int dev_dimension,int numGPUThreads)
+__global__ void comp_dist_glbl(double* dev_data,double* dev_distances,double* dev_partition_sums,int centerIter,int numPoints,int dev_dimension,int numGPUThreads)
 {
 	// Starting off with very simplistic 1-D threads blocks and 1-D grids
 	int tid = threadIdx.x + blockIdx.x*blockDim.x;
 	int per_thread = (numPoints + numGPUThreads - 1)/numGPUThreads;// Term in the numerator is added to that we can get ceiling of numPoints/numGPUThreads
 	int startIndex = tid*per_thread;
 	int endIndex = min((tid + 1)*per_thread,numPoints);
-	float min_dist = FLT_MAX, local_dist,temp,prev_val = 0,old_prev_val=0;
+	double min_dist = DBL_MAX, local_dist,temp,prev_val = 0,old_prev_val=0;
 	for (int dataIndex = startIndex; dataIndex < endIndex; ++dataIndex)
 	{
 
@@ -729,11 +729,11 @@ __global__ void comp_dist_glbl(float* dev_data,float* dev_distances,float* dev_p
 }
 
 // This addtionally does things in strided fashion as opposed to assigning each thread some fixed block
-__global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,float* dev_partition_sums,int centerIter,int numPoints,int dev_dimension,int numGPUThreads)
+__global__ void comp_dist_glbl_strided(double* dev_data,double* dev_distances,double* dev_partition_sums,int centerIter,int numPoints,int dev_dimension,int numGPUThreads)
 {
 	int dataIndex 	= threadIdx.x + blockIdx.x*blockDim.x;
 	int stride 		= blockDim.x*gridDim.x;
-	float min_dist, local_dist, temp;
+	double min_dist, local_dist, temp;
 	while(dataIndex < numPoints)
 	{
 		if (centerIter == 1) // This is the first time dev_distances will get its values
@@ -757,7 +757,7 @@ __global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,floa
 			// {
 			// 	min_dist 	= dev_distances[dataIndex] - dev_distances[dataIndex - 1];
 			// }
-			min_dist = FLT_MAX;
+			min_dist = DBL_MAX;
 			for (int i = 0; i < centerIter; ++i)
 			{
 				local_dist 	= 0;
@@ -778,14 +778,14 @@ __global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,floa
 // numPts : number of points in data
 // numSamples: number of points to sample
 // size : size of centers i.e. number of centers chosen already
-float* d2_sample(float* data,float* centers,int numPts, int numSamples, int size)
+double* d2_sample(double* data,double* centers,int numPts, int numSamples, int size)
 {
 	
 	// cumulative probability for each group of points
 	// the distances are cumulative only for a group. So, [0,...,numPts/numThreads], [numPts/numThreads+1,...,numPts*2/numThreads],... and so on. These groups contain cumulative distances.
-	float* distances 	= (float*)malloc(numPts*sizeof(float));
-    float* local_sums	= (float*)malloc(numThreads*sizeof(float));   // local sums. first is sum for [0...numPts/numThreads-1], and so on. This is also a cumulative distribution.
-    float* result 		= (float*)malloc(numSamples*DIMENSION*sizeof(float));
+	double* distances 	= (double*)malloc(numPts*sizeof(double));
+    double* local_sums	= (double*)malloc(numThreads*sizeof(double));   // local sums. first is sum for [0...numPts/numThreads-1], and so on. This is also a cumulative distribution.
+    double* result 		= (double*)malloc(numSamples*DIMENSION*sizeof(double));
     for (int i = 0; i < numSamples; ++i)
     {
     	for (int j = 0; j < DIMENSION; ++j)
@@ -794,10 +794,10 @@ float* d2_sample(float* data,float* centers,int numPts, int numSamples, int size
     	}
     }
     // we're gonna need 2*numSamples random numbers. 
-    float* rnd 		= (float*)malloc(2*numSamples*sizeof(float));
+    double* rnd 		= (double*)malloc(2*numSamples*sizeof(double));
     int i;
 	for(i = 0; i < 2*numSamples; i++){
-		rnd[i] = ((float) rand())/RAND_MAX;
+		rnd[i] = ((double) rand())/RAND_MAX;
 	}
     #pragma omp parallel
     {
@@ -810,11 +810,11 @@ float* d2_sample(float* data,float* centers,int numPts, int numSamples, int size
         int higher 		= (tid + 1) * per_thread;
         if(tid == numThreads - 1) higher = numPts;
         int block_size 	= higher - lower;
-        float min_dist, local_dist;
-        float* p;
-        float prev_val = 0;
+        double min_dist, local_dist;
+        double* p;
+        double prev_val = 0;
         // cost of each block
-        float local_sum = 0;
+        double local_sum = 0;
         int center_size = size;
         int i,j;
         for(i = 0;i < block_size;i++)
@@ -861,7 +861,7 @@ float* d2_sample(float* data,float* centers,int numPts, int numSamples, int size
             {
             	result[i*DIMENSION + j] = data[pointIndex*DIMENSION + j];
             }
-            // memcpy(result + i*DIMENSION, data + pointIndex*DIMENSION, DIMENSION*sizeof(float));
+            // memcpy(result + i*DIMENSION, data + pointIndex*DIMENSION, DIMENSION*sizeof(double));
         }
         gettimeofday(&end,NULL);
         float sample_time = get_time_diff(start,end);
@@ -878,13 +878,13 @@ float* d2_sample(float* data,float* centers,int numPts, int numSamples, int size
 }
 
 // This version of d2_sample has optimized cost calculation by using cost computed in last iteration
-float* d2_sample_2(float* data,float* centers,int numPts, int numSamples, int size, float* distances)
+double* d2_sample_2(double* data,double* centers,int numPts, int numSamples, int size, double* distances)
 {
 	
 	// cumulative probability for each group of points
 	// the distances are cumulative only for a group. So, [0,...,numPts/numThreads], [numPts/numThreads+1,...,numPts*2/numThreads],... and so on. These groups contain cumulative distances.
-    float* local_sums	= (float*)malloc(numThreads*sizeof(float));   // local sums. first is sum for [0...numPts/numThreads-1], and so on. This is also a cumulative distribution.
-    float* result 		= (float*)malloc(numSamples*DIMENSION*sizeof(float));
+    double* local_sums	= (double*)malloc(numThreads*sizeof(double));   // local sums. first is sum for [0...numPts/numThreads-1], and so on. This is also a cumulative distribution.
+    double* result 		= (double*)malloc(numSamples*DIMENSION*sizeof(double));
     for (int i = 0; i < numSamples; ++i)
     {
     	for (int j = 0; j < DIMENSION; ++j)
@@ -893,10 +893,10 @@ float* d2_sample_2(float* data,float* centers,int numPts, int numSamples, int si
     	}
     }
     // we're gonna need 2*numSamples random numbers. 
-    float* rnd 		= (float*)malloc(2*numSamples*sizeof(float));
+    double* rnd 		= (double*)malloc(2*numSamples*sizeof(double));
     int i;
 	for(i = 0; i < 2*numSamples; i++){
-		rnd[i] = ((float) rand())/RAND_MAX;
+		rnd[i] = ((double) rand())/RAND_MAX;
 	}
     #pragma omp parallel
     {
@@ -909,11 +909,11 @@ float* d2_sample_2(float* data,float* centers,int numPts, int numSamples, int si
         int higher 		= (tid + 1) * per_thread;
         if(tid == numThreads - 1) higher = numPts;
         int block_size 	= higher - lower;
-        float min_dist, local_dist;
-        float* p;
-        float prev_val = 0, old_prev_val = 0;
+        double min_dist, local_dist;
+        double* p;
+        double prev_val = 0, old_prev_val = 0;
         // cost of each block
-        float local_sum = 0;
+        double local_sum = 0;
         int center_size = size;
         int i;
         for(i = 0;i < block_size;i++)
@@ -973,7 +973,7 @@ float* d2_sample_2(float* data,float* centers,int numPts, int numSamples, int si
             {
             	result[i*DIMENSION + j] = data[pointIndex*DIMENSION + j];
             }
-            // memcpy(result + i*DIMENSION, data + pointIndex*DIMENSION, DIMENSION*sizeof(float));
+            // memcpy(result + i*DIMENSION, data + pointIndex*DIMENSION, DIMENSION*sizeof(double));
         }
         gettimeofday(&end,NULL);
         float sample_time = get_time_diff(start,end);
@@ -988,27 +988,27 @@ float* d2_sample_2(float* data,float* centers,int numPts, int numSamples, int si
     return result;
 }
 
-float* mean_heuristic(float* multiset,int multisetSize)
+double* mean_heuristic(double* multiset,int multisetSize)
 {
 	// first do a kmeans++ initialiation on the multiset
 	int i,j;
 	// gettimeofday(&start,NULL);
-	float* level_2_sample = (float*)malloc(NUM_CLUSTER*DIMENSION*sizeof(float));
+	double* level_2_sample = (double*)malloc(NUM_CLUSTER*DIMENSION*sizeof(double));
 	for(i = 0; i < NUM_CLUSTER; i++)
 	{
-		float* point = d2_sample(multiset,level_2_sample,multisetSize,1,i);
+		double* point = d2_sample(multiset,level_2_sample,multisetSize,1,i);
 		for (j = 0; j < DIMENSION; ++j)
 		{
 			level_2_sample[i*DIMENSION + j] = point[j];
 		}
-		// memcpy(level_2_sample + i*DIMENSION, point, DIMENSION*sizeof(float)) ;
+		// memcpy(level_2_sample + i*DIMENSION, point, DIMENSION*sizeof(double)) ;
 	}
 
 	// gettimeofday(&end,NULL);
 	// printf("Time taken to choose k centers::%f\n",get_time_diff(start,end));
 	// gettimeofday(&start,NULL);
 	int* counts 			= (int*)malloc(NUM_CLUSTER*sizeof(int)); // number of points assigned to each kmeans++ center
-    float* cluster_means 	= (float*)malloc(NUM_CLUSTER*DIMENSION*sizeof(float)); // for taking the centroid later on. We maintain a sum of all points assigned to a center here.
+    double* cluster_means 	= (double*)malloc(NUM_CLUSTER*DIMENSION*sizeof(double)); // for taking the centroid later on. We maintain a sum of all points assigned to a center here.
     for (i = 0; i < NUM_CLUSTER; i++)
     {
         counts[i] = 0;
@@ -1020,12 +1020,12 @@ float* mean_heuristic(float* multiset,int multisetSize)
     // here the heuristic does things in a parallel fashion
     // maintain a local structure for each thread to keep track of cluster sums and counts
     int** local_tmp_counts 				= (int**)malloc(numThreads*sizeof(int*));
-    float** local_tmp_cluster_means 	= (float**)malloc(numThreads*sizeof(float*));
+    double** local_tmp_cluster_means 	= (double**)malloc(numThreads*sizeof(double*));
     #pragma omp parallel
     {
         int tid = omp_get_thread_num();
         int* local_counts 			= (int*)malloc(NUM_CLUSTER*sizeof(int));
-        float* local_cluster_means = (float*)malloc(NUM_CLUSTER*DIMENSION*sizeof(float));
+        double* local_cluster_means = (double*)malloc(NUM_CLUSTER*DIMENSION*sizeof(double));
         for (int i = 0; i < NUM_CLUSTER; i++) 
         {
         	local_counts[i] = 0;
@@ -1036,7 +1036,7 @@ float* mean_heuristic(float* multiset,int multisetSize)
         }
         local_tmp_counts[tid] = local_counts;  // save the pointers to local data structures
         local_tmp_cluster_means[tid] = local_cluster_means;
-        float min_dist, tmp_dist;
+        double min_dist, tmp_dist;
         int index;
         #pragma omp for schedule(static)
         for (int i = 0; i < multisetSize; i++) 
@@ -1097,10 +1097,10 @@ float* mean_heuristic(float* multiset,int multisetSize)
     return cluster_means + index*DIMENSION;
 }
 
-float distance(float* p1, float* p2)
+double distance(double* p1, double* p2)
 {
 	int i;
-	float localSum = 0;
+	double localSum = 0;
 	for (i = 0; i < DIMENSION; ++i)
 	{
 		localSum += (p1[i] - p2[i])*(p1[i] - p2[i]);
@@ -1108,7 +1108,7 @@ float distance(float* p1, float* p2)
 	return localSum;
 }
 
-void write_centers_to_file(float* centers)
+void write_centers_to_file(double* centers)
 {
 	FILE* writer = fopen("dataExchange.txt","w");
 
@@ -1122,22 +1122,22 @@ void write_centers_to_file(float* centers)
 	}
 }
 
-static inline float mean(float* a, int n)
+static inline float mean(double* a, int n)
 {
-	float sum = 0;
+	double sum = 0;
 	for(int i = 0; i < n; i++){
 		sum += a[i];
 	}
 	return sum/n;
 }
 
-static inline float sd(float* a, int n)
+static inline float sd(double* a, int n)
 {
-	float sum = 0;
+	double sum = 0;
 	for(int i = 0; i < n; i++){
 		sum += a[i];
 	}
-	float mean = sum/n;
+	double mean = sum/n;
 	sum = 0;
 	for(int i = 0; i < n; i++){
 		sum += (a[i] - mean) * (a[i] - mean);
@@ -1145,6 +1145,6 @@ static inline float sd(float* a, int n)
 	return sqrt(sum/n);
 }
 
-static inline float get_time_diff(struct timeval t1, struct timeval t2){
+static inline double get_time_diff(struct timeval t1, struct timeval t2){
 	return t2.tv_sec - t1.tv_sec + 1e-6 * (t2.tv_usec - t1.tv_usec);
 }
