@@ -62,6 +62,7 @@
 #define ROUNDED_CLUSTER 128
 #define DATA "birch1"
 
+
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
@@ -75,26 +76,29 @@
 #include "cuda_profiler_api.h"
 #include <thrust/scan.h>
 
-static inline float sd(float* a, int n);
-static inline float mean(float* a, int n);
-static inline float get_time_diff(struct timeval, struct timeval);
+static inline float sd(double* a, int n);
+static inline float mean(double* a, int n);
+static inline double get_time_diff(struct timeval, struct timeval);
 
 __global__ void kernelAddConstant(int *g_a, const int b);
 int correctResult(int *data, const int n, const int b);
 int main_check();
-__global__ void comp_dist(float* dev_data,float* dev_distances,float* dev_partition_sums, float* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
-__global__ void comp_dist_2(float* dev_data,float* dev_distances,float* dev_partition_sums, float* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
-__global__ void comp_dist_glbl(float* dev_data,float* dev_distances,float* dev_partition_sums,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
-__global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,float* dev_partition_sums,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
+__global__ void comp_dist(double* dev_data,double* dev_distances,double* dev_partition_sums, double* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
+__global__ void comp_dist_2(double* dev_data,double* dev_distances,double* dev_partition_sums, double* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
+__global__ void comp_dist_glbl(double* dev_data,double* dev_distances,double* dev_partition_sums,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
+__global__ void comp_dist_glbl_strided(double* dev_data,double* dev_distances,double* dev_partition_sums,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
 
-int sample_from_distribution (float* probabilities, int startIndex, int endIndex, float prob);
-__global__ void sample_from_distribution_gpu(float* dev_partition_sums, float* dev_distances, int* dev_sampled_indices, float* dev_rnd,int per_thread, int dev_NUM_POINTS, int dev_N);
-__global__ void sample_from_distribution_gpu_strided(float* dev_distances, int* dev_sampled_indices, float* dev_rnd, int dev_NUM_POINTS, int dev_N);
+int sample_from_distribution (double* probabilities, int startIndex, int endIndex, double prob);
+__global__ void sample_from_distribution_gpu(double* dev_partition_sums, double* dev_distances, int* dev_sampled_indices, double* dev_rnd,int per_thread, int dev_NUM_POINTS, int dev_N);
+__global__ void sample_from_distribution_gpu_strided(double* dev_distances, int* dev_sampled_indices, double* dev_rnd, int dev_NUM_POINTS, int dev_N);
+
+__global__ void scan(float* inData,float* outData,int start,int n);
+void testScan();
 
 
-float distance(float* p1, float* p2);
-float* mean_heuristic(float* multiset,int multisetSize);
-float* d2_sample(float* data,float* centers,int numPts, int numSamples, int size);
-float* d2_sample_2(float* data,float* centers,int numPts, int numSamples, int size, float* distances);
-void write_centers_to_file(float* centers);
+double distance(double* p1, double* p2);
+double* mean_heuristic(double* multiset,int multisetSize);
+double* d2_sample(double* data,double* centers,int numPts, int numSamples, int size);
+double* d2_sample_2(double* data,double* centers,int numPts, int numSamples, int size, double* distances);
+void write_centers_to_file(double* centers);
 #endif

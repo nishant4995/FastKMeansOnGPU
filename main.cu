@@ -2,6 +2,8 @@
 
 // g++ -D BIRCH1 -g mainOMP.cpp -std=c++11 -O3 -msse4.2 -fopenmp -o birch1 -lm
 
+// This will work for NUM_POINTS = 1024*1024 as we are using BLOCK_SIZE = 32
+
 // random_device rd;
 // mt19937 gen(rd());
 // unsigned int max_val = gen.max();
@@ -9,6 +11,15 @@ int numThreads = 1;
 __constant__ float dev_centers_global[NUM_CLUSTER*DIMENSION]; // For using constant memory
 int main(int argc, char const *argv[])
 {
+	// float a1 = 119756262526522409091072.0;
+	// float a2 = 4516751081472.0;
+	// float a3 = a1+a2;
+	// float a4 = a3 - a1;
+	// printf("a3\t%f\n",a3 );
+	// printf("a4\t%f\n",a4 );
+	// exit(0);
+
+	// testScan();
 	// Currently no argument processing logic, will always run birch1 for 2 times with N=10k
 	srand(time(NULL));
 		int numRuns,method;
@@ -94,7 +105,7 @@ int main(int argc, char const *argv[])
 			j = 0;
 			while(j < DIMENSION)
 			{
-				fscanf(reader,"\t%f",&(data[i*DIMENSION + j]));
+				int k =	fscanf(reader,"\t%f",&(data[i*DIMENSION + j]));
 				j++;
 			}
 			i++;
@@ -118,28 +129,43 @@ int main(int argc, char const *argv[])
 		int numThreadsPerBlock 	= 1024;
 		int numSampleBlocks 	= 128;
 		int numSampleTperB 		= 32;
-		int numGPUThreads 		= numBlocks*numThreadsPerBlock;
+		// int numGPUThreads 		= numBlocks*numThreadsPerBlock;
 
+		int META_BLOCK_SUM_SIZE = NUM_META_PARTITIONS - 1; 
+		int ctr = 0;
+		// Code to roundUp to next power of 2 if not already
+		while(META_BLOCK_SUM_SIZE >= 1 )
+		{
+			META_BLOCK_SUM_SIZE /= 2;
+			ctr += 1;
+		}
+		META_BLOCK_SUM_SIZE = 1<<ctr;
 		// float* distances_debug	= (float*)malloc(NUM_POINTS*sizeof(float));
 		float* distances; // Using page-locked memory for distances
-		cudaHostAlloc((void**)&distances,NUM_POINTS*sizeof(float),cudaHostAllocDefault);
+		cudaHostAlloc((void**)&distances,ROUNDED_NUM_POINTS*sizeof(float),cudaHostAllocDefault);
 		float* centers 		= (float*)malloc(NUM_CLUSTER*DIMENSION*sizeof(float));
 		float* rnd 			= (float*)malloc(2*N*sizeof(float));
 		float* multiset    	= (float*)malloc(N*DIMENSION*sizeof(float));
-		float* partition_sums 	= (float*)malloc(numGPUThreads*sizeof(float));
+		// float* partition_sums 	= (float*)malloc(  numGPUThreads*sizeof(float)); // For blocked access pattern for distance array
+		float* partition_sums 	= (float*)malloc( ROUNDED_NUM_PARTITIONS*sizeof(float) ); // For strided access pattern 
 		// float* partition_sums_debug 	= (float*)malloc(numGPUThreads*sizeof(float));
 		int* 	sampled_indices = (int*)malloc(N*sizeof(int));
 
 		float* dev_distances;
+		float* dev_distances_scanned;
 		float* dev_partition_sums;
+		float* dev_meta_block_sums;
 		float* dev_rnd;
-		int* 	dev_sampled_indices;
+		int*   dev_sampled_indices;
 
 		// float* dev_centers; // When not using constant memory for centers
-		checkCudaErrors(cudaMalloc((void**)&dev_distances,NUM_POINTS*sizeof(float)));
-		checkCudaErrors(cudaMalloc((void**)&dev_partition_sums,numGPUThreads*sizeof(float)));
+		checkCudaErrors(cudaMalloc((void**)&dev_distances,ROUNDED_NUM_POINTS*sizeof(float)));
+		checkCudaErrors(cudaMalloc((void**)&dev_distances_scanned,ROUNDED_NUM_POINTS*sizeof(float)));
+		// checkCudaErrors(cudaMalloc((void**)&dev_partition_sums,numGPUThreads*sizeof(float))); // For blocked access pattern for distance array
+		checkCudaErrors(cudaMalloc((void**)&dev_partition_sums,ROUNDED_NUM_PARTITIONS*sizeof(float))); // For strided access pattern for distance array
 		checkCudaErrors(cudaMalloc((void**)&dev_sampled_indices,N*sizeof(int)));
 		checkCudaErrors(cudaMalloc((void**)&dev_rnd,2*N*sizeof(float)));
+		checkCudaErrors(cudaMalloc((void**)&dev_meta_block_sums,META_BLOCK_SUM_SIZE*sizeof(float)));
 		// checkCudaErrors(cudaMalloc((void**)&dev_centers,NUM_CLUSTER*DIMENSION*sizeof(float))); // No need when using constant memory
 
 		// initialize the initial centers
@@ -150,6 +176,7 @@ int main(int argc, char const *argv[])
 			
 			// First choosing the first point uniformly at random, no need to sample N points and all here
 			int tempPointIndex 	= (((float) rand())/RAND_MAX)*NUM_POINTS;
+			tempPointIndex = 2;
 			memcpy(centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(float));
 			checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(float),0,cudaMemcpyHostToDevice));
 			// checkCudaErrors(cudaMemcpy(dev_centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(float),cudaMemcpyHostToDevice));
@@ -180,47 +207,106 @@ int main(int argc, char const *argv[])
 					// sample_from_distribution_gpu<<<numSampleBlocks,numSampleTperB>>>(dev_partition_sums, dev_distances, dev_sampled_indices, dev_rnd, per_thread, NUM_POINTS, N);
 
 				// For strided memory access pattern
-					comp_dist_glbl_strided<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, i, NUM_POINTS, DIMENSION, numGPUThreads);
-					
-					cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(float),cudaMemcpyDeviceToHost);
-					for (j = 1; j < NUM_POINTS; ++j)
-					{
-						distances[j] += distances[j-1];
-					}
-					cudaMemcpy(dev_distances,distances,NUM_POINTS*sizeof(float),cudaMemcpyHostToDevice);
-					sample_from_distribution_gpu_strided<<<numSampleBlocks,numSampleTperB>>>(dev_distances, dev_sampled_indices, dev_rnd, NUM_POINTS, N);
-					
+					comp_dist_glbl_strided<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, i, NUM_POINTS, DIMENSION, ROUNDED_NUM_POINTS);
+
+					// float* d_1 		= (float*)malloc(ROUNDED_NUM_POINTS*sizeof(float));		
+					// float* d_2 		= (float*)malloc(ROUNDED_NUM_POINTS*sizeof(float));		
+					// float* d_3 		= (float*)malloc(ROUNDED_NUM_POINTS*sizeof(float));
+					// float* ps_1 	= (float*)malloc(ROUNDED_NUM_PARTITIONS*sizeof(float));
+					// float* ps_2 	= (float*)malloc(ROUNDED_NUM_PARTITIONS*sizeof(float));
+					// float* mps_1 	= (float*)malloc(META_BLOCK_SUM_SIZE*sizeof(float));
+					// cudaMemcpy(d_1,dev_distances,ROUNDED_NUM_POINTS*sizeof(float),cudaMemcpyDeviceToHost);
+					// inc_scan_1_block<<<NUM_PARTITIONS,BLOCK_SIZE,BLOCK_SIZE*sizeof(float)>>>(dev_distances,dev_distances_scanned, BLOCK_SIZE,dev_partition_sums);
+					inc_scan_1_block_SE<<<NUM_PARTITIONS,BLOCK_SIZE,BLOCK_SIZE*sizeof(float)>>>(dev_distances,dev_distances_scanned, dev_partition_sums);
+					// cudaMemcpy(d_2,dev_distances,ROUNDED_NUM_POINTS*sizeof(float),cudaMemcpyDeviceToHost);
+
+					// No need to zero out extra values in partition_sums, they don't make much difference
+					// inc_scan_1_block<<<NUM_META_PARTITIONS,BLOCK_SIZE,BLOCK_SIZE*sizeof(float)>>>(dev_partition_sums, dev_partition_sums, BLOCK_SIZE, dev_meta_block_sums);
+					inc_scan_1_block_SE<<<NUM_META_PARTITIONS,BLOCK_SIZE,BLOCK_SIZE*sizeof(float)>>>(dev_partition_sums, dev_partition_sums, dev_meta_block_sums);
+					// cudaMemcpy(ps_1,dev_partition_sums,ROUNDED_NUM_PARTITIONS*sizeof(float),cudaMemcpyDeviceToHost);
+
+					inc_scan_1<<<1,META_BLOCK_SUM_SIZE,META_BLOCK_SUM_SIZE*sizeof(float)>>>(dev_meta_block_sums, dev_meta_block_sums, META_BLOCK_SUM_SIZE);					
+					inc_scan_1_add<<<NUM_META_PARTITIONS,BLOCK_SIZE>>>(dev_partition_sums,dev_meta_block_sums,BLOCK_SIZE);
+					// cudaMemcpy(ps_2,dev_partition_sums,ROUNDED_NUM_PARTITIONS*sizeof(float),cudaMemcpyDeviceToHost);
+					// cudaMemcpy(mps_1,dev_meta_block_sums,META_BLOCK_SUM_SIZE*sizeof(float),cudaMemcpyDeviceToHost);
+
+					sample_from_distribution_gpu<<<numSampleBlocks,numSampleTperB>>>(dev_partition_sums, dev_distances_scanned, dev_sampled_indices, dev_rnd, BLOCK_SIZE, NUM_POINTS, N);
+
+					// inc_scan_1_rev<<<NUM_PARTITIONS,BLOCK_SIZE,2*BLOCK_SIZE*sizeof(float)>>>(dev_distances,dev_distances,BLOCK_SIZE);
+					// cudaMemcpy(d_3,dev_distances,ROUNDED_NUM_POINTS*sizeof(float),cudaMemcpyDeviceToHost);
+
+					// Print cost and related information
+						// printf("      NUM_PARTITIONS::%d\n",NUM_PARTITIONS );
+						// printf("RNDED_NUM_PARTITIONS::%d\n",ROUNDED_NUM_PARTITIONS );
+						// printf(" META_BLOCK_SUM_SIZE::%d\n",META_BLOCK_SUM_SIZE );
+						// printf(" NUM_META_PARTITIONS::%d\n",NUM_META_PARTITIONS );
+
+						// int p_ctr = 0;
+						// for (int iter = 0; iter < ROUNDED_NUM_POINTS; ++iter)
+						// {
+						// 	if ((iter +1)% BLOCK_SIZE == 0)
+						// 	{
+						// 		printf("%d\t%.1f\t%.1f\t%.1f\t-->%.1f\n",iter,d_1[iter],d_3[iter],d_2[iter],ps_2[p_ctr]);
+						// 		p_ctr += 1;
+						// 	}
+						// 	else
+						// 		printf("%d\t%.1f\t%.1f\t%.1f\n",iter,d_1[iter],d_3[iter],d_2[iter]);
+						// }
+
+						// int m_ctr = 0;
+						// for (int iter = 0; iter < ROUNDED_NUM_PARTITIONS; ++iter)
+						// {
+						// 	if ((iter+1) % BLOCK_SIZE == 0)
+						// 	{
+						// 		printf("%d\t%.1f\t%.1f--->%d \t%.1f\n\n",iter,ps_1[iter],ps_2[iter],m_ctr,mps_1[m_ctr]);
+						// 		m_ctr += 1;
+						// 	}
+						// 	else
+						// 		printf("%d\t%.1f\t%.1f\n",iter,ps_1[iter],ps_2[iter]);
+						// }
+
+						// for (m_ctr = 0; m_ctr < META_BLOCK_SUM_SIZE; ++m_ctr)
+						// {
+						// 	printf("-->%d\t%.1f\n",m_ctr,mps_1[m_ctr]);
+						// }
+						// exit(0);
+
 					// // Division of distance array into blocks so that sampling is similar to blocked cost calculation approach
-					// int per_thread = (NUM_POINTS + numGPUThreads-1)/numGPUThreads;
-					// cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(float),cudaMemcpyDeviceToHost);
-					// float prev_val = distances[0],prev_part_val=0;
-					// int p_ctr = 0;
-					// for (j = 1; j < NUM_POINTS; ++j)
-					// {
-					// 	distances[j] 	+= prev_val;
-					// 	prev_val 		= distances[j];
-					// 	if ((j+1)%per_thread == 0)
-					// 	{
-					// 		partition_sums[p_ctr] = distances[j] + prev_part_val;
-					// 		prev_part_val = partition_sums[p_ctr];
-					// 		p_ctr += 1;
-					// 		prev_val = 0;
-							
-					// 	}
-					// 	else if (j == NUM_POINTS -1)
-					// 	{
-					// 		partition_sums[p_ctr] = distances[j] + prev_part_val;
-					// 		prev_part_val = partition_sums[p_ctr];
-					// 		p_ctr += 1;
-					// 		prev_val = 0;
-					// 	}
-					// }
-					// cudaMemcpy(dev_distances,distances,NUM_POINTS*sizeof(float),cudaMemcpyHostToDevice);
-					// cudaMemcpy(dev_partition_sums,partition_sums,numGPUThreads*sizeof(float),cudaMemcpyHostToDevice);
-					// sample_from_distribution_gpu<<<numSampleBlocks,numSampleTperB>>>(dev_partition_sums, dev_distances, dev_sampled_indices, dev_rnd, per_thread, NUM_POINTS, N);
+						// int per_thread = (NUM_POINTS + numGPUThreads-1)/numGPUThreads;
+						// cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(float),cudaMemcpyDeviceToHost);
+						// int per_thread = BLOCK_SIZE;
+						// float prev_val = distances[0],prev_part_val=0;
+						// int p_ctr = 0;
+						// for (j = 1; j < NUM_POINTS; ++j)
+						// {
+						// 	distances[j] 	+= prev_val;
+						// 	prev_val 		= distances[j];
+						// 	// printf("%d\t%f\t%f\n",j,distances[j],distances_debug[j]);
+						// 	if ((j+1)%per_thread == 0)
+						// 	{
+						// 		partition_sums[p_ctr] = distances[j] + prev_part_val;
+						// 		// printf("%d\t%f\t%f\n",p_ctr,partition_sums[p_ctr],partition_sums_debug[p_ctr]);
+
+						// 		prev_part_val = partition_sums[p_ctr];
+						// 		p_ctr += 1;
+						// 		prev_val = 0;
+								
+						// 	}
+						// 	else if (j == NUM_POINTS -1)
+						// 	{
+						// 		partition_sums[p_ctr] = distances[j] + prev_part_val;
+						// 		prev_part_val = partition_sums[p_ctr];
+						// 		p_ctr += 1;
+						// 		prev_val = 0;
+						// 	}
+						// }
+						// cudaMemcpy(dev_distances,distances,ROUNDED_NUM_POINTS*sizeof(float),cudaMemcpyHostToDevice);
+						// cudaMemcpy(dev_partition_sums,partition_sums,numGPUThreads*sizeof(float),cudaMemcpyHostToDevice);
+						// sample_from_distribution_gpu<<<numSampleBlocks,numSampleTperB>>>(dev_partition_sums, dev_distances, dev_sampled_indices, dev_rnd, per_thread, ROUNDED_NUM_POINTS, N);
 
 				// Copy back indices of sampled points, no need to copy those points as we have the data here as well
 				cudaMemcpy(sampled_indices,dev_sampled_indices,N*sizeof(int),cudaMemcpyDeviceToHost);
+				// printf("Multiset Iteration::%d\n",i);
 				for (int copy_i = 0; copy_i < N; ++copy_i)
 				{
 					int index = sampled_indices[copy_i];
@@ -281,7 +367,6 @@ int main(int argc, char const *argv[])
 				// checkCudaErrors(cudaMemcpy(dev_centers + i*DIMENSION , nextCenter, DIMENSION*sizeof(float), cudaMemcpyHostToDevice));
 				gettimeofday(&sample_end,NULL);
 				meanHeuristicTime += get_time_diff(sample_start,sample_end);
-				
 			}
 			printf("compDistTime\t\t%2.5f\t%2.5f\n",compDistTime,compDistTime/(NUM_CLUSTER-1) );
 			printf("makeCumulativeTime\t%2.5f\t%2.5f\n",makeCumulativeTime,makeCumulativeTime/(NUM_CLUSTER-1) );
@@ -333,7 +418,7 @@ int main(int argc, char const *argv[])
 
 		// Can make first two static arrays
 		int* cluster_counts 	= (int*)malloc(NUM_CLUSTER*sizeof(int)); // number of points assigned to each cluster
-		float* cluster_sums	= (float*)malloc(DIMENSION*NUM_CLUSTER*sizeof(float)); // sum of points assigned to each cluster
+		float* cluster_sums		= (float*)malloc(DIMENSION*NUM_CLUSTER*sizeof(float)); // sum of points assigned to each cluster
 		int** cluster_counts_pointers 	= (int**)malloc(numThreads*sizeof(int*)); // pointers to local "number of points assigned to each cluster"
 		float** cluster_sums_pointers 	= (float**)malloc(numThreads*sizeof(float*)); // pointers to local "sum of points assigned to each cluster"
 		
@@ -465,6 +550,13 @@ int main(int argc, char const *argv[])
 		free(rnd);
 		free(multiset);
 		free(partition_sums);
+
+		cudaFree((void**)&dev_distances);
+		cudaFree((void**)&dev_partition_sums);
+		cudaFree((void**)&dev_sampled_indices);
+		cudaFree((void**)&dev_rnd);
+		cudaFree((void**)&dev_meta_block_sums);
+		
 	}
 
 	logger = fopen(resultFile,"w");
@@ -475,6 +567,263 @@ int main(int argc, char const *argv[])
 	fprintf(logger, "Per iteration time:   %f %f\n",mean(iterTime,numRuns),sd(iterTime,numRuns));
 	fclose(logger);
 	return 0;
+}
+
+void testScan()
+{
+	printf("ceil 10/4::%d\n",ceil(10,4));
+	printf("roundup 10/4::%d\n",roundUp(10,4));
+	printf("ceil 100000/32::%d\n",ceil(100000/32,32));
+	printf("roundup 100000/32::%d\n",roundUp(100000/32,32));
+
+	exit(0);
+	int num = 8;
+	int array_size = SCAN_BLOCK_SIZE*num;
+	float* data = (float*)malloc(array_size*sizeof(float));
+	float* data_scanned_exc = (float*)malloc(array_size*sizeof(float));
+	float* data_scanned_inc = (float*)malloc(array_size*sizeof(float));
+	float* block_sums		= (float*)malloc(num*sizeof(float));
+	for (int i = 0; i < array_size; ++i)
+	{
+		data[i] = 1;
+		data_scanned_exc[i] = -1;
+		data_scanned_inc[i] = -1;
+	}
+	float* dev_data;
+	float* dev_data_scanned_exc;
+	float* dev_data_scanned_inc;
+	float* dev_block_sums;
+	cudaMalloc((void**)&dev_data,array_size*sizeof(float));
+	cudaMalloc((void**)&dev_data_scanned_exc,array_size*sizeof(float));
+	cudaMalloc((void**)&dev_data_scanned_inc,array_size*sizeof(float));
+	cudaMalloc((void**)&dev_block_sums,num*sizeof(float));
+
+	cudaMemcpy(dev_data,data,array_size*sizeof(float),cudaMemcpyHostToDevice);
+	// exc_scan_2<<< num , SCAN_BLOCK_SIZE/2,SCAN_BLOCK_SIZE*sizeof(float)>>>(dev_data,dev_data_scanned_exc,SCAN_BLOCK_SIZE);
+	inc_scan_1_block<<< num , SCAN_BLOCK_SIZE  ,SCAN_BLOCK_SIZE*sizeof(float)>>>(dev_data,dev_data_scanned_inc,SCAN_BLOCK_SIZE,dev_block_sums);
+	inc_scan_1<<< 1 , num  , SCAN_BLOCK_SIZE*sizeof(float)>>>(dev_block_sums ,dev_block_sums,num);
+
+	inc_scan_1_add<<< num, SCAN_BLOCK_SIZE>>>(dev_data_scanned_inc,dev_block_sums,SCAN_BLOCK_SIZE);
+
+	// inc_scan_1_rev<<< num , SCAN_BLOCK_SIZE  ,2*SCAN_BLOCK_SIZE*sizeof(float)>>>(dev_data_scanned_inc,dev_data_scanned_exc,SCAN_BLOCK_SIZE);
+	// cudaMemcpy(data_scanned_exc,dev_data,array_size*sizeof(float),cudaMemcpyDeviceToHost);
+	// cudaMemcpy(data_scanned_inc,dev_data,array_size*sizeof(float),cudaMemcpyDeviceToHost);
+	// cudaMemcpy(data_scanned_exc,dev_data_scanned_exc,array_size*sizeof(float),cudaMemcpyDeviceToHost);
+	cudaMemcpy(data_scanned_inc,dev_data_scanned_inc,array_size*sizeof(float),cudaMemcpyDeviceToHost);
+	for (int i = 0; i < array_size; ++i)
+	{
+
+		printf("%d\t%.1f\t%.1f\t%.1f\n",i,data[i],data_scanned_exc[i],data_scanned_inc[i]);
+	}
+	printf("Scan finished successfully\n");
+	exit(0);
+}
+
+// Code written for 1-D thread-block and 1-D grids ONLY
+// Works correctly in-place as well
+// Can handle 2*num_threads_per_block elements at max(which in turn is upper bounded by GPU specification)
+// Size of shared memory also limits number of elemenst it can handle ...
+// Because the part of array scanned by a thread-block needs to copied in the shared memory
+// n is size of array/sub-array to be scanned by the thread-block
+__global__ void exc_scan_2(float* inData,float* outData,int n)
+{
+	extern __shared__ 	float temp[]; 	// allocated at run-time
+	int thid 		= threadIdx.x;
+	int startIndex 	= n*blockIdx.x; // Each thread-block gets to scan an array of size n, with startIndex as computed
+	int offset 		= 1;
+
+	
+	// Load data into shared memory
+	temp[2*thid] 	= inData[startIndex + 2*thid]; // load input into shared memory
+	temp[2*thid+1] 	= inData[startIndex + 2*thid+1];
+
+	// perform up-scan 
+	for (int d = n>>1; d > 0; d >>= 1) // build sum in place up the tree
+	{
+		__syncthreads();
+		if (thid < d) // This makes sure that only first d threads are doing some work, d is halved in every iteration
+		{
+			int ai = offset*(2*thid+1) - 1; // -1 converts them to valid indices of the array 
+			int bi = offset*(2*thid+2) - 1;
+		
+			temp[bi] += temp[ai];
+		}
+		offset *= 2;
+	}
+	
+	if (thid == 0) { temp[n - 1] = 0; } // clear the last element
+
+	// perform down-scan, same pattern as in up-scan followed but in reverse
+	for (int d = 1; d < n; d *= 2) // traverse down tree & build scan
+	{
+		offset >>= 1; // Dividing offset by two
+		__syncthreads();
+		if (thid < d)
+		{
+			int ai 		= offset*(2*thid+1) - 1;
+			int bi 		= offset*(2*thid+2) - 1;
+			float t		= temp[ai];
+			temp[ai] 	= temp[bi];
+			temp[bi] 	+= t;
+		}
+	}
+
+	__syncthreads();
+	outData[startIndex + 2*thid] 	= temp[2*thid]; // write results to device memory
+	outData[startIndex + 2*thid+1] 	= temp[2*thid+1];
+}
+
+// Code written for 1-D thread-block ONLY
+// Max Size of array it can handle = num_threads in the thread block(which in turn is upper bounded by GPU specification)
+// Handles only 1 element per thread, can make it handle 2 or 4 or more  elements but not for now
+// n is size of array/sub-array to be scanned by the thread-block
+__global__ void inc_scan_1(float* inData,float* outData,int n)
+{
+	extern __shared__ 	float temp[];
+	int thid 		= threadIdx.x;
+	int startIndex 	= n*blockIdx.x; // Each thread-block gets to scan an array of size n, with startIndex as computed
+	int offset = 1;
+
+	// load input into shared memory
+	temp[thid] 	= inData[startIndex + thid]; 
+
+	// perform up-scan 
+	for (int d = n>>1; d > 0; d >>= 1)
+	{
+		__syncthreads();
+		if (thid < d) // This makes sure that only first d threads are doing some work, d is halved in every iteration
+		{
+			int ai = offset*(2*thid+1) - 1; // -1 converts them to valid indices of the array 
+			int bi = offset*(2*thid+2) - 1;
+		
+			temp[bi] += temp[ai];
+		}
+		offset *= 2;
+	}
+
+	// perform down-scan	
+	int stride 	= n/4;
+	int index 	= thid + 1; // I have written down the pseudo-code for array indices starting from 1
+	for (int i = 1; i < n ; i <<= 1) // Need to perform log_2(n) - 1 iterations
+	{
+		__syncthreads();
+		// Check condition for i1
+		if (( index + stride < n) && ( index % (2*stride) == 0 ))
+		{
+			temp[ index + stride -1] += temp[index - 1];
+		}
+		stride >>= 1; // Half the stride
+	}
+
+	__syncthreads();
+	outData[startIndex + thid] 	= temp[thid];	 // write results to device memory
+}
+
+// Code written for 1-D thread-block ONLY
+// Max Size of array it can handle = num_threads in the thread block(which in turn is upper bounded by GPU specification)
+// Handles only 1 element per thread, can make it handle 2 or 4 or more  elements but not for now
+// n is size of array/sub-array to be scanned by the thread-block
+__global__ void inc_scan_1_block(float* inData,float* outData,int n,float* block_sums)
+{
+	extern __shared__ 	float temp[];
+	int thid 		= threadIdx.x;
+	int startIndex 	= n*blockIdx.x; // Each thread-block gets to scan an array of size n, with startIndex as computed
+	int offset = 1;
+
+	// load input into shared memory
+	temp[thid] 	= inData[startIndex + thid]; 
+
+	// perform up-scan 
+	for (int d = n>>1; d > 0; d >>= 1)
+	{
+		__syncthreads();
+		if (thid < d) // This makes sure that only first d threads are doing some work, d is halved in every iteration
+		{
+			int ai = offset*(2*thid+1) - 1; // -1 converts them to valid indices of the array 
+			int bi = offset*(2*thid+2) - 1;
+		
+			temp[bi] += temp[ai];
+		}
+		offset *= 2;
+	}
+
+	// perform down-scan	
+	int stride 	= n/4;
+	int index 	= thid + 1; // I have written down the pseudo-code for array indices starting from 1
+	for (int i = 1; i < n ; i <<= 1) // Need to perform log_2(n) - 1 iterations
+	{
+		__syncthreads();
+		// Check condition for i1
+		if (( index + stride < n) && ( index % (2*stride) == 0 ))
+		{
+			temp[ index + stride -1] += temp[index - 1];
+		}
+		stride >>= 1; // Half the stride
+	}
+
+	__syncthreads();
+	outData[startIndex + thid] 	= temp[thid];	 // write results to device memory
+
+	if(thid == blockDim.x - 1)
+		block_sums[blockIdx.x] = temp[thid];
+}
+
+// Step-Efficient Naive implementation of scan
+// Works for fixed array/sub-array of size = 32 (Warp-Size)
+__global__ void inc_scan_1_block_SE(float* inData,float* outData,float* block_sums)
+{
+	extern __shared__ 	float temp[];
+	int thid 		= threadIdx.x;
+	int startIndex 	= 32*blockIdx.x; // Each thread-block gets to scan an array of size n, with startIndex as computed
+
+	// load input into shared memory
+	temp[thid] 	= inData[startIndex + thid]; 
+
+	if(thid >= 1)
+		temp[thid] = temp[thid-1] + temp[thid];
+	if(thid >= 2)
+		temp[thid] = temp[thid-2] + temp[thid];
+	if(thid >= 4)
+		temp[thid] = temp[thid-4] + temp[thid];
+	if(thid >= 8)
+		temp[thid] = temp[thid-8] + temp[thid];
+	if(thid >= 16)
+		temp[thid] = temp[thid-16] + temp[thid];
+
+	outData[startIndex + thid] = temp[thid];
+	if(thid == blockDim.x - 1)
+		block_sums[blockIdx.x] = temp[thid];
+}
+
+__global__ void inc_scan_1_add(float* block,float* block_sums,int n)
+{
+	int thid 		= threadIdx.x;
+	int startIndex 	= n*blockIdx.x; // Each thread-block gets to scan an array of size n, with startIndex as computed
+
+	// toAdd should be sum of previous block
+	float toAdd = blockIdx.x > 0 ? block_sums[blockIdx.x -1]:0;
+	block[startIndex + thid] += toAdd; 
+}
+// Reverses what an inclusive scan does
+// Assumes (blockDim.x == n)
+// Size of shared memory array = 2*n
+__global__ void inc_scan_1_rev(float* inData,float* outData,int n)
+{
+	extern __shared__ 	float temp[];
+	int thid 		= threadIdx.x;
+	int startIndex 	= n*blockIdx.x; // Each thread-block gets to scan an array of size n, with startIndex as computed
+
+	// Size of temp = 2*n
+	// First half is calculating result for odd indices
+	// Second half is calculating result for even indices
+	// load input into shared memory
+	temp[thid] 		= inData[startIndex + thid];
+	temp[thid + n] 	= temp[thid];
+
+	int curr = ((thid + 1)%2)*n + thid;
+	int prev = (thid + n - 1)% n + ((thid + 1)%2)*n;
+
+	outData[startIndex + thid] = thid > 0 ? (temp[curr] - temp[prev]) : temp[curr];
 }
 
 int sample_from_distribution(float* probabilities, int startIndex, int endIndex, float prob) 
@@ -504,7 +853,7 @@ int sample_from_distribution(float* probabilities, int startIndex, int endIndex,
 __global__ void sample_from_distribution_gpu(float* dev_partition_sums, float* dev_distances, int* dev_sampled_indices, float* dev_rnd,int per_thread, int dev_NUM_POINTS, int dev_N) 
 {
 
-	int numValidPartitions = dev_NUM_POINTS/per_thread + 1;
+	int numValidPartitions = (dev_NUM_POINTS + per_thread - 1)/per_thread ;
 	int start,mid,end,groupNo,pointIndex;
 	float prob;
 	int i = blockIdx.x*blockDim.x + threadIdx.x;
@@ -563,6 +912,8 @@ __global__ void sample_from_distribution_gpu(float* dev_partition_sums, float* d
 		dev_sampled_indices[i] = pointIndex;
 	}
 }
+
+
 
 // Sampling for case of strided memory access pattern, no dev_partition_sums here
 __global__ void sample_from_distribution_gpu_strided(float* dev_distances, int* dev_sampled_indices, float* dev_rnd, int dev_NUM_POINTS, int dev_N) 
@@ -729,7 +1080,7 @@ __global__ void comp_dist_glbl(float* dev_data,float* dev_distances,float* dev_p
 }
 
 // This addtionally does things in strided fashion as opposed to assigning each thread some fixed block
-__global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,float* dev_partition_sums,int centerIter,int numPoints,int dev_dimension,int numGPUThreads)
+__global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,int centerIter,int numPoints,int dev_dimension,int rndedNumPoints)
 {
 	int dataIndex 	= threadIdx.x + blockIdx.x*blockDim.x;
 	int stride 		= blockDim.x*gridDim.x;
@@ -749,28 +1100,37 @@ __global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,floa
 		else
 		{
 			// Assuming that dev_distances has been made cumulative, after this function call
-			// if (dataIndex == 0)
-			// {
-			// 	min_dist 	= dev_distances[dataIndex];
-			// }
-			// else
-			// {
-			// 	min_dist 	= dev_distances[dataIndex] - dev_distances[dataIndex - 1];
-			// }
-			min_dist = FLT_MAX;
-			for (int i = 0; i < centerIter; ++i)
+			min_dist 	= dev_distances[dataIndex];
+			local_dist 	= 0.0; 
+			for (int j = 0; j < dev_dimension; ++j)
 			{
-				local_dist 	= 0;
-				for (int j = 0; j < dev_dimension; ++j)
-				{
-					temp = dev_data[dataIndex*dev_dimension + j] - dev_centers_global[i*dev_dimension + j];
-					local_dist += temp*temp;
-				}
-				min_dist = min(min_dist,local_dist*local_dist);
+				temp = dev_data[dataIndex*dev_dimension + j] - dev_centers_global[(centerIter-1)*dev_dimension + j];
+				local_dist += temp*temp;
 			}
+			min_dist = min(min_dist,local_dist*local_dist);
 			dev_distances[dataIndex] = min_dist;  // --No-- Need to square min_dist here, it is *not*  already squared value
+			
+			// Bad way of doing things, we need not iterate over all previous centers
+			// min_dist = FLT_MAX;
+			// for (int i = 0; i < centerIter; ++i)
+			// {
+			// 	local_dist 	= 0;
+			// 	for (int j = 0; j < dev_dimension; ++j)
+			// 	{
+			// 		temp = dev_data[dataIndex*dev_dimension + j] - dev_centers_global[i*dev_dimension + j];
+			// 		local_dist += temp*temp;
+			// 	}
+			// 	min_dist = min(min_dist,local_dist);
+			// }
+			// dev_distances[dataIndex] = min_dist*min_dist;  // --No-- Need to square min_dist here, it is *not*  already squared value
 		}
 		dataIndex += stride;
+	}
+
+	// Zero out the extra region which was padded to make size of distance array a multiple of BLOCK_SIZE
+	if( dataIndex < rndedNumPoints)
+	{
+		dev_distances[dataIndex] = 0;
 	}
 }
 
