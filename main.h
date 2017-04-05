@@ -65,16 +65,20 @@
 // Should be power of 2 and Max value is 1024 which is max number of threads_per_block on my GPU
 #define SCAN_BLOCK_SIZE 32
 
-#define BLOCK_SIZE 32
+// Implementation of step efficient scan is correct is WARP_SIZE for the GPU on which this code is running is 32.
+// If warp size if different, then we need to change the implementation accordingly
+// WARP_SIZE is the size of each partition/segement of the distance array for which scan operation is performed
+#define WARP_SIZE 32  
+// #define BLOCK_SIZE 32
+
 #define ceil(a,b)  (a + b - 1)/b
 #define roundUp(a,b)  ((a + b - 1)/b)*b
 
-#define ROUNDED_NUM_POINTS roundUp(NUM_POINTS,BLOCK_SIZE)
+#define ROUNDED_NUM_POINTS roundUp(NUM_POINTS,WARP_SIZE)
+#define NUM_PARTITIONS ceil(NUM_POINTS,WARP_SIZE)
+#define ROUNDED_NUM_PARTITIONS roundUp( NUM_PARTITIONS , WARP_SIZE )
 
-#define NUM_PARTITIONS ceil(NUM_POINTS,BLOCK_SIZE)
-#define ROUNDED_NUM_PARTITIONS roundUp( NUM_PARTITIONS , BLOCK_SIZE )
-
-#define NUM_META_PARTITIONS ceil(NUM_PARTITIONS,BLOCK_SIZE)
+#define NUM_META_PARTITIONS ceil(NUM_PARTITIONS,WARP_SIZE)
 
 
 #include <stdio.h>

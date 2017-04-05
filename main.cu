@@ -11,7 +11,10 @@ int numThreads = 1;
 __constant__ float dev_centers_global[NUM_CLUSTER*DIMENSION]; // For using constant memory
 int main(int argc, char const *argv[])
 {
-	// float a1 = 119756262526522409091072.0;
+	// Due to limited precision of float, getting back actual distance array from scanned version of it causes errors,
+	// This errors apparently makes things worse when we start using BLOCK_SIZE = 64 and more.
+	// This is an instance of underflow which can be observed when first center is fixed to be data[2]
+	// float a1 = 119756262526522409091072.0;   
 	// float a2 = 4516751081472.0;
 	// float a3 = a1+a2;
 	// float a4 = a3 - a1;
@@ -131,6 +134,7 @@ int main(int argc, char const *argv[])
 		int numSampleTperB 		= 32;
 		// int numGPUThreads 		= numBlocks*numThreadsPerBlock;
 
+		// If using strided memory access pattern
 		int META_BLOCK_SUM_SIZE = NUM_META_PARTITIONS - 1; 
 		int ctr = 0;
 		// Code to roundUp to next power of 2 if not already
@@ -140,16 +144,13 @@ int main(int argc, char const *argv[])
 			ctr += 1;
 		}
 		META_BLOCK_SUM_SIZE = 1<<ctr;
-		// float* distances_debug	= (float*)malloc(NUM_POINTS*sizeof(float));
-		float* distances; // Using page-locked memory for distances
-		cudaHostAlloc((void**)&distances,ROUNDED_NUM_POINTS*sizeof(float),cudaHostAllocDefault);
+
+		float* distances 	= (float*)malloc(NUM_POINTS*sizeof(float));
 		float* centers 		= (float*)malloc(NUM_CLUSTER*DIMENSION*sizeof(float));
 		float* rnd 			= (float*)malloc(2*N*sizeof(float));
 		float* multiset    	= (float*)malloc(N*DIMENSION*sizeof(float));
-		// float* partition_sums 	= (float*)malloc(  numGPUThreads*sizeof(float)); // For blocked access pattern for distance array
-		float* partition_sums 	= (float*)malloc( ROUNDED_NUM_PARTITIONS*sizeof(float) ); // For strided access pattern 
-		// float* partition_sums_debug 	= (float*)malloc(numGPUThreads*sizeof(float));
 		int* 	sampled_indices = (int*)malloc(N*sizeof(int));
+		// float* partition_sums 	= (float*)malloc(  numGPUThreads*sizeof(float)); // For blocked access pattern for distance array
 
 		float* dev_distances;
 		float* dev_distances_scanned;
@@ -158,14 +159,14 @@ int main(int argc, char const *argv[])
 		float* dev_rnd;
 		int*   dev_sampled_indices;
 
-		// float* dev_centers; // When not using constant memory for centers
+		// float* dev_centers; // Needed when not using constant memory for centers
 		checkCudaErrors(cudaMalloc((void**)&dev_distances,ROUNDED_NUM_POINTS*sizeof(float)));
 		checkCudaErrors(cudaMalloc((void**)&dev_distances_scanned,ROUNDED_NUM_POINTS*sizeof(float)));
 		// checkCudaErrors(cudaMalloc((void**)&dev_partition_sums,numGPUThreads*sizeof(float))); // For blocked access pattern for distance array
 		checkCudaErrors(cudaMalloc((void**)&dev_partition_sums,ROUNDED_NUM_PARTITIONS*sizeof(float))); // For strided access pattern for distance array
+		checkCudaErrors(cudaMalloc((void**)&dev_meta_block_sums,META_BLOCK_SUM_SIZE*sizeof(float)));
 		checkCudaErrors(cudaMalloc((void**)&dev_sampled_indices,N*sizeof(int)));
 		checkCudaErrors(cudaMalloc((void**)&dev_rnd,2*N*sizeof(float)));
-		checkCudaErrors(cudaMalloc((void**)&dev_meta_block_sums,META_BLOCK_SUM_SIZE*sizeof(float)));
 		// checkCudaErrors(cudaMalloc((void**)&dev_centers,NUM_CLUSTER*DIMENSION*sizeof(float))); // No need when using constant memory
 
 		// initialize the initial centers
@@ -173,14 +174,11 @@ int main(int argc, char const *argv[])
 		{  
 			// ---------------------- GPU-Based Implementation Start ------------------------------------
 			cudaProfilerStart();
-			
 			// First choosing the first point uniformly at random, no need to sample N points and all here
 			int tempPointIndex 	= (((float) rand())/RAND_MAX)*NUM_POINTS;
-			tempPointIndex = 2;
 			memcpy(centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(float));
 			checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(float),0,cudaMemcpyHostToDevice));
 			// checkCudaErrors(cudaMemcpy(dev_centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(float),cudaMemcpyHostToDevice));
-
 			float compDistTime = 0, makeCumulativeTime = 0, samplingTime = 0, meanHeuristicTime = 0;
 			for(i = 1; i < NUM_CLUSTER; i++)
 			{
@@ -202,111 +200,36 @@ int main(int argc, char const *argv[])
 					// 	partition_sums[j] += partition_sums[j-1];
 					// }
 					// cudaMemcpy(dev_partition_sums,partition_sums,numGPUThreads*sizeof(float),cudaMemcpyHostToDevice);
-
+	
 					// int per_thread = (NUM_POINTS + numGPUThreads-1)/numGPUThreads;
 					// sample_from_distribution_gpu<<<numSampleBlocks,numSampleTperB>>>(dev_partition_sums, dev_distances, dev_sampled_indices, dev_rnd, per_thread, NUM_POINTS, N);
 
 				// For strided memory access pattern
+					// Compute Cost/distance for each point
 					comp_dist_glbl_strided<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, i, NUM_POINTS, DIMENSION, ROUNDED_NUM_POINTS);
 
-					// float* d_1 		= (float*)malloc(ROUNDED_NUM_POINTS*sizeof(float));		
-					// float* d_2 		= (float*)malloc(ROUNDED_NUM_POINTS*sizeof(float));		
-					// float* d_3 		= (float*)malloc(ROUNDED_NUM_POINTS*sizeof(float));
-					// float* ps_1 	= (float*)malloc(ROUNDED_NUM_PARTITIONS*sizeof(float));
-					// float* ps_2 	= (float*)malloc(ROUNDED_NUM_PARTITIONS*sizeof(float));
-					// float* mps_1 	= (float*)malloc(META_BLOCK_SUM_SIZE*sizeof(float));
-					// cudaMemcpy(d_1,dev_distances,ROUNDED_NUM_POINTS*sizeof(float),cudaMemcpyDeviceToHost);
+					// Make the cost/distance cumulative
 					// inc_scan_1_block<<<NUM_PARTITIONS,BLOCK_SIZE,BLOCK_SIZE*sizeof(float)>>>(dev_distances,dev_distances_scanned, BLOCK_SIZE,dev_partition_sums);
-					inc_scan_1_block_SE<<<NUM_PARTITIONS,BLOCK_SIZE,BLOCK_SIZE*sizeof(float)>>>(dev_distances,dev_distances_scanned, dev_partition_sums);
-					// cudaMemcpy(d_2,dev_distances,ROUNDED_NUM_POINTS*sizeof(float),cudaMemcpyDeviceToHost);
-
-					// No need to zero out extra values in partition_sums, they don't make much difference
+					inc_scan_1_block_SE<<<NUM_PARTITIONS,WARP_SIZE,WARP_SIZE*sizeof(float)>>>(dev_distances,dev_distances_scanned, dev_partition_sums);
+					
+					// Make partition_sums cumulative,No need to zero out extra values in partition_sums
+					// It is made cumulative in 2 steps, first a segemented scan is done on partition_sums and then
+					// then an array containing sum of each segment is scanned and results added to resp. segment
+					// so as to get the scan of partition_sums array
 					// inc_scan_1_block<<<NUM_META_PARTITIONS,BLOCK_SIZE,BLOCK_SIZE*sizeof(float)>>>(dev_partition_sums, dev_partition_sums, BLOCK_SIZE, dev_meta_block_sums);
-					inc_scan_1_block_SE<<<NUM_META_PARTITIONS,BLOCK_SIZE,BLOCK_SIZE*sizeof(float)>>>(dev_partition_sums, dev_partition_sums, dev_meta_block_sums);
-					// cudaMemcpy(ps_1,dev_partition_sums,ROUNDED_NUM_PARTITIONS*sizeof(float),cudaMemcpyDeviceToHost);
+					inc_scan_1_block_SE<<<NUM_META_PARTITIONS,WARP_SIZE,WARP_SIZE*sizeof(float)>>>(dev_partition_sums, dev_partition_sums, dev_meta_block_sums);
+					inc_scan_1<<<1,META_BLOCK_SUM_SIZE,META_BLOCK_SUM_SIZE*sizeof(float)>>>(dev_meta_block_sums, dev_meta_block_sums, META_BLOCK_SUM_SIZE);
+					inc_scan_1_add<<<NUM_META_PARTITIONS,WARP_SIZE>>>(dev_partition_sums,dev_meta_block_sums,WARP_SIZE);
+					
+					// Sample points from distribution
+					sample_from_distribution_gpu<<<numSampleBlocks,numSampleTperB>>>(dev_partition_sums, dev_distances_scanned, dev_sampled_indices, dev_rnd, WARP_SIZE, NUM_POINTS, N);
 
-					inc_scan_1<<<1,META_BLOCK_SUM_SIZE,META_BLOCK_SUM_SIZE*sizeof(float)>>>(dev_meta_block_sums, dev_meta_block_sums, META_BLOCK_SUM_SIZE);					
-					inc_scan_1_add<<<NUM_META_PARTITIONS,BLOCK_SIZE>>>(dev_partition_sums,dev_meta_block_sums,BLOCK_SIZE);
-					// cudaMemcpy(ps_2,dev_partition_sums,ROUNDED_NUM_PARTITIONS*sizeof(float),cudaMemcpyDeviceToHost);
-					// cudaMemcpy(mps_1,dev_meta_block_sums,META_BLOCK_SUM_SIZE*sizeof(float),cudaMemcpyDeviceToHost);
-
-					sample_from_distribution_gpu<<<numSampleBlocks,numSampleTperB>>>(dev_partition_sums, dev_distances_scanned, dev_sampled_indices, dev_rnd, BLOCK_SIZE, NUM_POINTS, N);
-
+					// Is scan of distance array is done in-place then we need to undo the scan operation so that we can use the
+					// distance array to optimize cost computation step
 					// inc_scan_1_rev<<<NUM_PARTITIONS,BLOCK_SIZE,2*BLOCK_SIZE*sizeof(float)>>>(dev_distances,dev_distances,BLOCK_SIZE);
-					// cudaMemcpy(d_3,dev_distances,ROUNDED_NUM_POINTS*sizeof(float),cudaMemcpyDeviceToHost);
-
-					// Print cost and related information
-						// printf("      NUM_PARTITIONS::%d\n",NUM_PARTITIONS );
-						// printf("RNDED_NUM_PARTITIONS::%d\n",ROUNDED_NUM_PARTITIONS );
-						// printf(" META_BLOCK_SUM_SIZE::%d\n",META_BLOCK_SUM_SIZE );
-						// printf(" NUM_META_PARTITIONS::%d\n",NUM_META_PARTITIONS );
-
-						// int p_ctr = 0;
-						// for (int iter = 0; iter < ROUNDED_NUM_POINTS; ++iter)
-						// {
-						// 	if ((iter +1)% BLOCK_SIZE == 0)
-						// 	{
-						// 		printf("%d\t%.1f\t%.1f\t%.1f\t-->%.1f\n",iter,d_1[iter],d_3[iter],d_2[iter],ps_2[p_ctr]);
-						// 		p_ctr += 1;
-						// 	}
-						// 	else
-						// 		printf("%d\t%.1f\t%.1f\t%.1f\n",iter,d_1[iter],d_3[iter],d_2[iter]);
-						// }
-
-						// int m_ctr = 0;
-						// for (int iter = 0; iter < ROUNDED_NUM_PARTITIONS; ++iter)
-						// {
-						// 	if ((iter+1) % BLOCK_SIZE == 0)
-						// 	{
-						// 		printf("%d\t%.1f\t%.1f--->%d \t%.1f\n\n",iter,ps_1[iter],ps_2[iter],m_ctr,mps_1[m_ctr]);
-						// 		m_ctr += 1;
-						// 	}
-						// 	else
-						// 		printf("%d\t%.1f\t%.1f\n",iter,ps_1[iter],ps_2[iter]);
-						// }
-
-						// for (m_ctr = 0; m_ctr < META_BLOCK_SUM_SIZE; ++m_ctr)
-						// {
-						// 	printf("-->%d\t%.1f\n",m_ctr,mps_1[m_ctr]);
-						// }
-						// exit(0);
-
-					// // Division of distance array into blocks so that sampling is similar to blocked cost calculation approach
-						// int per_thread = (NUM_POINTS + numGPUThreads-1)/numGPUThreads;
-						// cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(float),cudaMemcpyDeviceToHost);
-						// int per_thread = BLOCK_SIZE;
-						// float prev_val = distances[0],prev_part_val=0;
-						// int p_ctr = 0;
-						// for (j = 1; j < NUM_POINTS; ++j)
-						// {
-						// 	distances[j] 	+= prev_val;
-						// 	prev_val 		= distances[j];
-						// 	// printf("%d\t%f\t%f\n",j,distances[j],distances_debug[j]);
-						// 	if ((j+1)%per_thread == 0)
-						// 	{
-						// 		partition_sums[p_ctr] = distances[j] + prev_part_val;
-						// 		// printf("%d\t%f\t%f\n",p_ctr,partition_sums[p_ctr],partition_sums_debug[p_ctr]);
-
-						// 		prev_part_val = partition_sums[p_ctr];
-						// 		p_ctr += 1;
-						// 		prev_val = 0;
-								
-						// 	}
-						// 	else if (j == NUM_POINTS -1)
-						// 	{
-						// 		partition_sums[p_ctr] = distances[j] + prev_part_val;
-						// 		prev_part_val = partition_sums[p_ctr];
-						// 		p_ctr += 1;
-						// 		prev_val = 0;
-						// 	}
-						// }
-						// cudaMemcpy(dev_distances,distances,ROUNDED_NUM_POINTS*sizeof(float),cudaMemcpyHostToDevice);
-						// cudaMemcpy(dev_partition_sums,partition_sums,numGPUThreads*sizeof(float),cudaMemcpyHostToDevice);
-						// sample_from_distribution_gpu<<<numSampleBlocks,numSampleTperB>>>(dev_partition_sums, dev_distances, dev_sampled_indices, dev_rnd, per_thread, ROUNDED_NUM_POINTS, N);
 
 				// Copy back indices of sampled points, no need to copy those points as we have the data here as well
 				cudaMemcpy(sampled_indices,dev_sampled_indices,N*sizeof(int),cudaMemcpyDeviceToHost);
-				// printf("Multiset Iteration::%d\n",i);
 				for (int copy_i = 0; copy_i < N; ++copy_i)
 				{
 					int index = sampled_indices[copy_i];
@@ -380,10 +303,10 @@ int main(int argc, char const *argv[])
 				// {
 				// 	struct timeval sample_start,sample_end;
 				// 	gettimeofday(&sample_start,NULL);
-				// 	// multiset = d2_sample(data,centers,NUM_POINTS,N,i);
-				// 	multiset = d2_sample_2(data,centers,NUM_POINTS,N,i,distances);
+				// 	multiset = d2_sample(data,centers,NUM_POINTS,N,i);
+				// 	// multiset = d2_sample_2(data,centers,NUM_POINTS,N,i,distances);
 				// 	gettimeofday(&sample_end,NULL);
-				// 	printf("Time taken for d2_sample::%d-->%f\n",i,get_time_diff(sample_start,sample_end));
+				// 	// printf("Time taken for d2_sample::%d-->%f\n",i,get_time_diff(sample_start,sample_end));
 				// 	samplingTime_1[i] = get_time_diff(sample_start,sample_end);
 				// 	gettimeofday(&sample_start,NULL);
 				// 	float* nextCenter = mean_heuristic(multiset,N);
@@ -392,7 +315,7 @@ int main(int argc, char const *argv[])
 				// 		centers[i*DIMENSION + j] = nextCenter[j];
 				// 	}
 				// 	gettimeofday(&sample_end,NULL);
-				// 	printf("Time taken for mean_heuristic::%d-->%f\n",i,get_time_diff(sample_start,sample_end));
+				// 	// printf("Time taken for mean_heuristic::%d-->%f\n",i,get_time_diff(sample_start,sample_end));
 				// 	samplingTime_2[i] = get_time_diff(sample_start,sample_end);
 				// }
 			// ---------------------- CPU-Based Implementation End --------------------------------------
@@ -545,11 +468,10 @@ int main(int argc, char const *argv[])
 		free(cluster_sums_pointers);
 
 		free(centers);
-		cudaFreeHost(distances); // free this way when using page-locked memory for distances
-		// free(distances);
 		free(rnd);
 		free(multiset);
-		free(partition_sums);
+		free(distances);
+		// free(partition_sums); // partion_sums is used only when using blockedMem Access pattern with and it is brought to CPU for making this sum cumulative
 
 		cudaFree((void**)&dev_distances);
 		cudaFree((void**)&dev_partition_sums);
@@ -795,6 +717,7 @@ __global__ void inc_scan_1_block_SE(float* inData,float* outData,float* block_su
 		block_sums[blockIdx.x] = temp[thid];
 }
 
+// Add result of to all segments/blocks of the array in order to convert an array with segmented scan to full scan
 __global__ void inc_scan_1_add(float* block,float* block_sums,int n)
 {
 	int thid 		= threadIdx.x;
@@ -912,8 +835,6 @@ __global__ void sample_from_distribution_gpu(float* dev_partition_sums, float* d
 		dev_sampled_indices[i] = pointIndex;
 	}
 }
-
-
 
 // Sampling for case of strided memory access pattern, no dev_partition_sums here
 __global__ void sample_from_distribution_gpu_strided(float* dev_distances, int* dev_sampled_indices, float* dev_rnd, int dev_NUM_POINTS, int dev_N) 
