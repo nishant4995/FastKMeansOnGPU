@@ -105,10 +105,14 @@ __global__ void comp_dist(float* dev_data,float* dev_distances,float* dev_partit
 __global__ void comp_dist_2(float* dev_data,float* dev_distances,float* dev_partition_sums, float* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
 __global__ void comp_dist_glbl(float* dev_data,float* dev_distances,float* dev_partition_sums,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
 __global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,int centerIter,int numPoints,int dev_dimension, int rndedNumPoints);
+__global__ void comp_dist_strided(float* dev_data,float* dev_distances,float* dev_centers,int centerIter,int numPoints,int dev_dimension,int rndedNumPoints);
 
 int sample_from_distribution (float* probabilities, int startIndex, int endIndex, float prob);
-__global__ void sample_from_distribution_gpu(float* dev_partition_sums, float* dev_distances, int* dev_sampled_indices, float* dev_rnd,int per_thread, int dev_NUM_POINTS, int dev_N);
-__global__ void sample_from_distribution_gpu_strided(float* dev_distances, int* dev_sampled_indices, float* dev_rnd, int dev_NUM_POINTS, int dev_N);
+__global__ void sample_from_distribution_gpu(float* dev_partition_sums, float* dev_distances, int* dev_sampled_indices, float* dev_rnd,int per_thread, int dev_NUM_POINTS, int dev_num_samples);
+__global__ void sample_from_distribution_gpu_copy(float* dev_partition_sums, float* dev_distances, float* dev_multiset, float* dev_rnd,int per_thread, int dev_NUM_POINTS, int dev_num_samples,float* dev_data);
+__global__ void sample_from_distribution_gpu_strided(float* dev_distances, int* dev_sampled_indices, float* dev_rnd, int dev_NUM_POINTS, int dev_num_samples);
+__global__ void sample_from_distribution_gpu_strided_copy(float* dev_distances, float* dev_multiset, float* dev_rnd, int dev_NUM_POINTS, int dev_num_samples, float* dev_data);
+
 
 __global__ void exc_scan_2(float* inData,float* outData,int n);
 __global__ void inc_scan_1(float* inData,float* outData,int n);
@@ -118,10 +122,12 @@ __global__ void inc_scan_1_add(float* block,float* block_sums,int n);
 __global__ void inc_scan_1_block_SE(float* inData,float* outData,float* block_sums);
 
 void testScan();
+__global__ void copy_to_multiset(float* dev_multiset,float* dev_data,int* dev_sampled_indices);
 
 
 float distance(float* p1, float* p2);
 float* mean_heuristic(float* multiset,int multisetSize);
+float* mean_heuristic_assign(float* multiset,int multisetSize,float* level_2_sample);
 float* d2_sample(float* data,float* centers,int numPts, int numSamples, int size);
 float* d2_sample_2(float* data,float* centers,int numPts, int numSamples, int size, float* distances);
 void write_centers_to_file(float* centers);

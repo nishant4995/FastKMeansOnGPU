@@ -146,148 +146,148 @@ int main(int argc, char const *argv[])
 		if(method == 2) // d2-seeding
 		{  
 			// ---------------------- GPU-Based Implementation Start ------------------------------------
-			cudaProfilerStart();
-			
-			// First choosing the first point uniformly at random, no need to sample N points and all here
-			int tempPointIndex 	= (((double) rand())/RAND_MAX)*NUM_POINTS;
-			memcpy(centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double));
-			checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double),0,cudaMemcpyHostToDevice));
-			// checkCudaErrors(cudaMemcpy(dev_centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double),cudaMemcpyHostToDevice));
+				cudaProfilerStart();
+				
+				// First choosing the first point uniformly at random, no need to sample N points and all here
+				int tempPointIndex 	= (((double) rand())/RAND_MAX)*NUM_POINTS;
+				memcpy(centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double));
+				checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double),0,cudaMemcpyHostToDevice));
+				// checkCudaErrors(cudaMemcpy(dev_centers, data+tempPointIndex*DIMENSION, DIMENSION*sizeof(double),cudaMemcpyHostToDevice));
 
-			double compDistTime = 0, makeCumulativeTime = 0, samplingTime = 0, meanHeuristicTime = 0;
-			for(i = 1; i < NUM_CLUSTER; i++)
-			{
-				struct timeval sample_start,sample_end;
-				gettimeofday(&sample_start,NULL);
-				for(j = 0; j < N; ++j)
+				double compDistTime = 0, makeCumulativeTime = 0, samplingTime = 0, meanHeuristicTime = 0;
+				for(i = 1; i < NUM_CLUSTER; i++)
 				{
-					rnd[2*j] 	= ((double) rand())/RAND_MAX;
-					rnd[2*j+1] 	= ((double) rand())/RAND_MAX;
-				}
-				cudaMemcpy(dev_rnd,rnd,2*N*sizeof(double),cudaMemcpyHostToDevice);// Can be overlapped with computation
-				// comp_dist<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, dev_centers, i, NUM_POINTS, DIMENSION, numGPUThreads);
-				
-				// For blocked access pattern
-					// comp_dist_glbl<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, i, NUM_POINTS, DIMENSION, numGPUThreads);
-					// cudaMemcpy(partition_sums,dev_partition_sums,numGPUThreads*sizeof(double),cudaMemcpyDeviceToHost);	
-					// for (j = 1; j < numGPUThreads; ++j) // Need to do this scan operation on GPU only, but testing things first
-					// {
-					// 	partition_sums[j] += partition_sums[j-1];
-					// }
-					// cudaMemcpy(dev_partition_sums,partition_sums,numGPUThreads*sizeof(double),cudaMemcpyHostToDevice);
-
-					// int per_thread = (NUM_POINTS + numGPUThreads-1)/numGPUThreads;
-					// sample_from_distribution_gpu<<<numSampleBlocks,numSampleTperB>>>(dev_partition_sums, dev_distances, dev_sampled_indices, dev_rnd, per_thread, NUM_POINTS, N);
-
-				// For strided memory access pattern
-					comp_dist_glbl_strided<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, i, NUM_POINTS, DIMENSION, numGPUThreads);
-					
-					cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(double),cudaMemcpyDeviceToHost);
-					for (j = 1; j < NUM_POINTS; ++j)
+					struct timeval sample_start,sample_end;
+					gettimeofday(&sample_start,NULL);
+					for(j = 0; j < N; ++j)
 					{
-						distances[j] += distances[j-1];
+						rnd[2*j] 	= ((double) rand())/RAND_MAX;
+						rnd[2*j+1] 	= ((double) rand())/RAND_MAX;
 					}
-					cudaMemcpy(dev_distances,distances,NUM_POINTS*sizeof(double),cudaMemcpyHostToDevice);
-					sample_from_distribution_gpu_strided<<<numSampleBlocks,numSampleTperB>>>(dev_distances, dev_sampled_indices, dev_rnd, NUM_POINTS, N);
+					cudaMemcpy(dev_rnd,rnd,2*N*sizeof(double),cudaMemcpyHostToDevice);// Can be overlapped with computation
+					// comp_dist<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, dev_centers, i, NUM_POINTS, DIMENSION, numGPUThreads);
 					
-					// // Division of distance array into blocks so that sampling is similar to blocked cost calculation approach
-					// int per_thread = (NUM_POINTS + numGPUThreads-1)/numGPUThreads;
-					// cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(double),cudaMemcpyDeviceToHost);
-					// double prev_val = distances[0],prev_part_val=0;
-					// int p_ctr = 0;
-					// for (j = 1; j < NUM_POINTS; ++j)
-					// {
-					// 	distances[j] 	+= prev_val;
-					// 	prev_val 		= distances[j];
-					// 	if ((j+1)%per_thread == 0)
-					// 	{
-					// 		partition_sums[p_ctr] = distances[j] + prev_part_val;
-					// 		prev_part_val = partition_sums[p_ctr];
-					// 		p_ctr += 1;
-					// 		prev_val = 0;
-							
-					// 	}
-					// 	else if (j == NUM_POINTS -1)
-					// 	{
-					// 		partition_sums[p_ctr] = distances[j] + prev_part_val;
-					// 		prev_part_val = partition_sums[p_ctr];
-					// 		p_ctr += 1;
-					// 		prev_val = 0;
-					// 	}
-					// }
-					// cudaMemcpy(dev_distances,distances,NUM_POINTS*sizeof(double),cudaMemcpyHostToDevice);
-					// cudaMemcpy(dev_partition_sums,partition_sums,numGPUThreads*sizeof(double),cudaMemcpyHostToDevice);
-					// sample_from_distribution_gpu<<<numSampleBlocks,numSampleTperB>>>(dev_partition_sums, dev_distances, dev_sampled_indices, dev_rnd, per_thread, NUM_POINTS, N);
+					// For blocked access pattern
+						// comp_dist_glbl<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, i, NUM_POINTS, DIMENSION, numGPUThreads);
+						// cudaMemcpy(partition_sums,dev_partition_sums,numGPUThreads*sizeof(double),cudaMemcpyDeviceToHost);	
+						// for (j = 1; j < numGPUThreads; ++j) // Need to do this scan operation on GPU only, but testing things first
+						// {
+						// 	partition_sums[j] += partition_sums[j-1];
+						// }
+						// cudaMemcpy(dev_partition_sums,partition_sums,numGPUThreads*sizeof(double),cudaMemcpyHostToDevice);
 
-				// Copy back indices of sampled points, no need to copy those points as we have the data here as well
-				cudaMemcpy(sampled_indices,dev_sampled_indices,N*sizeof(int),cudaMemcpyDeviceToHost);
-				for (int copy_i = 0; copy_i < N; ++copy_i)
-				{
-					int index = sampled_indices[copy_i];
-					for (int copy_j = 0; copy_j < DIMENSION; ++copy_j)
+						// int per_thread = (NUM_POINTS + numGPUThreads-1)/numGPUThreads;
+						// sample_from_distribution_gpu<<<numSampleBlocks,numSampleTperB>>>(dev_partition_sums, dev_distances, dev_sampled_indices, dev_rnd, per_thread, NUM_POINTS, N);
+
+					// For strided memory access pattern
+						comp_dist_glbl_strided<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, i, NUM_POINTS, DIMENSION, numGPUThreads);
+						
+						cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(double),cudaMemcpyDeviceToHost);
+						for (j = 1; j < NUM_POINTS; ++j)
+						{
+							distances[j] += distances[j-1];
+						}
+						cudaMemcpy(dev_distances,distances,NUM_POINTS*sizeof(double),cudaMemcpyHostToDevice);
+						sample_from_distribution_gpu_strided<<<numSampleBlocks,numSampleTperB>>>(dev_distances, dev_sampled_indices, dev_rnd, NUM_POINTS, N);
+						
+						// // Division of distance array into blocks so that sampling is similar to blocked cost calculation approach
+						// int per_thread = (NUM_POINTS + numGPUThreads-1)/numGPUThreads;
+						// cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(double),cudaMemcpyDeviceToHost);
+						// double prev_val = distances[0],prev_part_val=0;
+						// int p_ctr = 0;
+						// for (j = 1; j < NUM_POINTS; ++j)
+						// {
+						// 	distances[j] 	+= prev_val;
+						// 	prev_val 		= distances[j];
+						// 	if ((j+1)%per_thread == 0)
+						// 	{
+						// 		partition_sums[p_ctr] = distances[j] + prev_part_val;
+						// 		prev_part_val = partition_sums[p_ctr];
+						// 		p_ctr += 1;
+						// 		prev_val = 0;
+								
+						// 	}
+						// 	else if (j == NUM_POINTS -1)
+						// 	{
+						// 		partition_sums[p_ctr] = distances[j] + prev_part_val;
+						// 		prev_part_val = partition_sums[p_ctr];
+						// 		p_ctr += 1;
+						// 		prev_val = 0;
+						// 	}
+						// }
+						// cudaMemcpy(dev_distances,distances,NUM_POINTS*sizeof(double),cudaMemcpyHostToDevice);
+						// cudaMemcpy(dev_partition_sums,partition_sums,numGPUThreads*sizeof(double),cudaMemcpyHostToDevice);
+						// sample_from_distribution_gpu<<<numSampleBlocks,numSampleTperB>>>(dev_partition_sums, dev_distances, dev_sampled_indices, dev_rnd, per_thread, NUM_POINTS, N);
+
+					// Copy back indices of sampled points, no need to copy those points as we have the data here as well
+					cudaMemcpy(sampled_indices,dev_sampled_indices,N*sizeof(int),cudaMemcpyDeviceToHost);
+					for (int copy_i = 0; copy_i < N; ++copy_i)
 					{
-						multiset[copy_i*DIMENSION + copy_j] = data[index*DIMENSION + copy_j];
+						int index = sampled_indices[copy_i];
+						for (int copy_j = 0; copy_j < DIMENSION; ++copy_j)
+						{
+							multiset[copy_i*DIMENSION + copy_j] = data[index*DIMENSION + copy_j];
+						}
 					}
-				}
-				gettimeofday(&sample_end,NULL);
-				compDistTime += get_time_diff(sample_start,sample_end);
-				
-				// Code for sampling on CPU (first GPU implementation)
-					// // copy back to host memory for sampling purpose, 
-					// cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(double),cudaMemcpyDeviceToHost);
-					// cudaMemcpy(partition_sums,dev_partition_sums,numGPUThreads*sizeof(double),cudaMemcpyDeviceToHost);	
-
-					// // Make it cumulative for sampling purpose, can be done on GPU as well
-				
-					// // Already made cumulative above
-					// gettimeofday(&sample_start,NULL);
-					// for (j = 1; j < numGPUThreads; ++j)
-					// {
-					// 	partition_sums[j] += partition_sums[j-1];
-					// }
-					// gettimeofday(&sample_end,NULL);
-					// makeCumulativeTime += get_time_diff(sample_start,sample_end);
+					gettimeofday(&sample_end,NULL);
+					compDistTime += get_time_diff(sample_start,sample_end);
 					
-					// int per_thread = (NUM_POINTS + numGPUThreads-1)/numGPUThreads;
+					// Code for sampling on CPU (first GPU implementation)
+						// // copy back to host memory for sampling purpose, 
+						// cudaMemcpy(distances,dev_distances,NUM_POINTS*sizeof(double),cudaMemcpyDeviceToHost);
+						// cudaMemcpy(partition_sums,dev_partition_sums,numGPUThreads*sizeof(double),cudaMemcpyDeviceToHost);	
 
-					// gettimeofday(&sample_start,NULL);
-					// for(j = 0 ; j < N ; j++)
-					// {
-					// 	rnd[2*j] 	= ((double) rand())/RAND_MAX;
-					// 	rnd[2*j+1] 	= ((double) rand())/RAND_MAX;
+						// // Make it cumulative for sampling purpose, can be done on GPU as well
+					
+						// // Already made cumulative above
+						// gettimeofday(&sample_start,NULL);
+						// for (j = 1; j < numGPUThreads; ++j)
+						// {
+						// 	partition_sums[j] += partition_sums[j-1];
+						// }
+						// gettimeofday(&sample_end,NULL);
+						// makeCumulativeTime += get_time_diff(sample_start,sample_end);
+						
+						// int per_thread = (NUM_POINTS + numGPUThreads-1)/numGPUThreads;
 
-					// 	int numValidPartitions = NUM_POINTS/per_thread + 1;
-					// 	// first pick a block from the local_sums distribution
-					// 	int groupNo = sample_from_distribution(partition_sums, 0, numValidPartitions, rnd[2*j]*partition_sums[numValidPartitions-1]);
-					// 	// the start and end index of this block
-					// 	int startIndex 	= groupNo * per_thread;
-					// 	int endIndex 	= (groupNo + 1) * per_thread;
+						// gettimeofday(&sample_start,NULL);
+						// for(j = 0 ; j < N ; j++)
+						// {
+						// 	rnd[2*j] 	= ((double) rand())/RAND_MAX;
+						// 	rnd[2*j+1] 	= ((double) rand())/RAND_MAX;
 
-					// 	if(groupNo == numGPUThreads - 1) endIndex = NUM_POINTS;
-					// 	// now sample from the cumulative distribution of the block
-					// 	int pointIndex = sample_from_distribution(distances, startIndex, endIndex, rnd[2*j+1]*distances[endIndex-1]);
-					// 	for (int k = 0; k < DIMENSION; ++k)
-					// 	{
-					// 		multiset[j*DIMENSION + k] = data[pointIndex*DIMENSION + k];
-					// 	}
-					// }
-					// gettimeofday(&sample_end,NULL);
-					// samplingTime += get_time_diff(sample_start,sample_end);
+						// 	int numValidPartitions = NUM_POINTS/per_thread + 1;
+						// 	// first pick a block from the local_sums distribution
+						// 	int groupNo = sample_from_distribution(partition_sums, 0, numValidPartitions, rnd[2*j]*partition_sums[numValidPartitions-1]);
+						// 	// the start and end index of this block
+						// 	int startIndex 	= groupNo * per_thread;
+						// 	int endIndex 	= (groupNo + 1) * per_thread;
 
-				gettimeofday(&sample_start,NULL);
-				double* nextCenter = mean_heuristic(multiset,N);
-				memcpy(centers + i*DIMENSION,nextCenter,DIMENSION*sizeof(double));
-				checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global , nextCenter, DIMENSION*sizeof(double), i*DIMENSION*sizeof(double), cudaMemcpyHostToDevice));
-				// checkCudaErrors(cudaMemcpy(dev_centers + i*DIMENSION , nextCenter, DIMENSION*sizeof(double), cudaMemcpyHostToDevice));
-				gettimeofday(&sample_end,NULL);
-				meanHeuristicTime += get_time_diff(sample_start,sample_end);
-				
-			}
-			printf("compDistTime\t\t%2.5f\t%2.5f\n",compDistTime,compDistTime/(NUM_CLUSTER-1) );
-			printf("makeCumulativeTime\t%2.5f\t%2.5f\n",makeCumulativeTime,makeCumulativeTime/(NUM_CLUSTER-1) );
-			printf("samplingTime\t\t%2.5f\t%2.5f\n",samplingTime,samplingTime/(NUM_CLUSTER-1) );
-			printf("meanHeuristicTime\t%2.5f\t%2.5f\n",meanHeuristicTime,meanHeuristicTime/(NUM_CLUSTER-1) );
-			cudaProfilerStop();
+						// 	if(groupNo == numGPUThreads - 1) endIndex = NUM_POINTS;
+						// 	// now sample from the cumulative distribution of the block
+						// 	int pointIndex = sample_from_distribution(distances, startIndex, endIndex, rnd[2*j+1]*distances[endIndex-1]);
+						// 	for (int k = 0; k < DIMENSION; ++k)
+						// 	{
+						// 		multiset[j*DIMENSION + k] = data[pointIndex*DIMENSION + k];
+						// 	}
+						// }
+						// gettimeofday(&sample_end,NULL);
+						// samplingTime += get_time_diff(sample_start,sample_end);
+
+					gettimeofday(&sample_start,NULL);
+					double* nextCenter = mean_heuristic(multiset,N);
+					memcpy(centers + i*DIMENSION,nextCenter,DIMENSION*sizeof(double));
+					checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global , nextCenter, DIMENSION*sizeof(double), i*DIMENSION*sizeof(double), cudaMemcpyHostToDevice));
+					// checkCudaErrors(cudaMemcpy(dev_centers + i*DIMENSION , nextCenter, DIMENSION*sizeof(double), cudaMemcpyHostToDevice));
+					gettimeofday(&sample_end,NULL);
+					meanHeuristicTime += get_time_diff(sample_start,sample_end);
+					
+				}
+				printf("compDistTime\t\t%2.5f\t%2.5f\n",compDistTime,compDistTime/(NUM_CLUSTER-1) );
+				printf("makeCumulativeTime\t%2.5f\t%2.5f\n",makeCumulativeTime,makeCumulativeTime/(NUM_CLUSTER-1) );
+				printf("samplingTime\t\t%2.5f\t%2.5f\n",samplingTime,samplingTime/(NUM_CLUSTER-1) );
+				printf("meanHeuristicTime\t%2.5f\t%2.5f\n",meanHeuristicTime,meanHeuristicTime/(NUM_CLUSTER-1) );
+				cudaProfilerStop();
 			// ---------------------- GPU-Based Implementation End --------------------------------------
 			
 			// ---------------------- CPU-Based Implementation Start ------------------------------------
@@ -295,8 +295,8 @@ int main(int argc, char const *argv[])
 				// {
 				// 	struct timeval sample_start,sample_end;
 				// 	gettimeofday(&sample_start,NULL);
-				// 	// multiset = d2_sample(data,centers,NUM_POINTS,N,i);
-				// 	multiset = d2_sample_2(data,centers,NUM_POINTS,N,i,distances);
+				// 	multiset = d2_sample(data,centers,NUM_POINTS,N,i);
+				// 	// multiset = d2_sample_2(data,centers,NUM_POINTS,N,i,distances);
 				// 	gettimeofday(&sample_end,NULL);
 				// 	printf("Time taken for d2_sample::%d-->%f\n",i,get_time_diff(sample_start,sample_end));
 				// 	samplingTime_1[i] = get_time_diff(sample_start,sample_end);
