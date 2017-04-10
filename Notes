@@ -41,3 +41,14 @@ outFile_unoptimized:
 	Has print statements from the loop that had all this seeding code
 
 ----------------------------------------------------------------
+
+
+April 9
+Organizing function arguments etc causes some gap between 2 kernel calls, can this be avoided by using 2 or more streams?, Reducing number of arguments may also help as this will ensure slightly faster setup of function call
+
+In meanHeuristic replacement code we have
+A large number of kernel calls each doing very little amount of computation if proably not a favourable way of doing things on GPUs
+It might make sense to have mean heuristic on CPU, I can try to optimize that code and its performance will be better on CPUs anyway
+
+Implement Lloyds algo on GPU
+Implement Vornoi partitionin on GPU, it might not make sense as it is already very fast on CPU, and on GPU we might need several kernels to be able to do that compuation....

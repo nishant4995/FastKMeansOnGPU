@@ -128,7 +128,10 @@ __global__ void copy_to_multiset(float* dev_multiset,float* dev_data,int* dev_sa
 float distance(float* p1, float* p2);
 float* mean_heuristic(float* multiset,int multisetSize);
 float* mean_heuristic_assign(float* multiset,int multisetSize,float* level_2_sample);
+__global__ void mean_heuristic_assign_gpu(float* dev_multiset,int multisetSize, float* dev_l2_samples,float* dev_centers_temp);
+
 float* d2_sample(float* data,float* centers,int numPts, int numSamples, int size);
 float* d2_sample_2(float* data,float* centers,int numPts, int numSamples, int size, float* distances);
+float* d2_sample_3(float* data,float* centers,int numPts, int size, float* distances);
 void write_centers_to_file(float* centers);
 #endif
