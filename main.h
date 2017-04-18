@@ -106,6 +106,10 @@ __global__ void comp_dist_2(float* dev_data,float* dev_distances,float* dev_part
 __global__ void comp_dist_glbl(float* dev_data,float* dev_distances,float* dev_partition_sums,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
 __global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,int centerIter,int numPoints,int dev_dimension, int rndedNumPoints);
 __global__ void comp_dist_strided(float* dev_data,float* dev_distances,float* dev_centers,int centerIter,int numPoints,int dev_dimension,int rndedNumPoints);
+__global__ void comp_dist_package(float* dev_data,float* dev_distances,float* dev_partition_sums, float* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads,float* dev_rnd);
+__global__ void comp_dist_package_with_loop(float* dev_data,float* dev_distances,float* dev_partition_sums, float* dev_centers,int numPoints,int dev_dimension,int numGPUThreads,float *dev_rnd);
+
+
 
 int sample_from_distribution (float* probabilities, int startIndex, int endIndex, float prob);
 __global__ void sample_from_distribution_gpu(float* dev_partition_sums, float* dev_distances, int* dev_sampled_indices, float* dev_rnd,int per_thread, int dev_NUM_POINTS, int dev_num_samples);
