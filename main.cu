@@ -24,7 +24,16 @@ int main(int argc, char const *argv[])
 
 	// testScan();
 	// Currently no argument processing logic, will always run birch1 for 2 times with N=10k
-	srand(time(NULL));
+	srand(32);
+	// srand(time(NULL));
+
+		// for (int i = 0; i < 10; ++i)
+		// {
+		// 	int tempPointIndex 	= (((float) rand())/RAND_MAX)*NUM_POINTS;
+		// 	printf("%d\t%d\n",i,tempPointIndex );
+		// }
+		// exit(0);
+
 		int numRuns,method;
 		int N = 0;
 
@@ -185,6 +194,7 @@ int main(int argc, char const *argv[])
 		float* dev_multiset_dist;
 		float* dev_multiset_dist_scanned;
 		float* dev_multiset_dist_partition_sums;
+		float* dev_multiset_dist_partition_sums_scanned;
 		float* dev_l2_centers;
 		int*   dev_l2_center_indices;
 
@@ -206,7 +216,8 @@ int main(int argc, char const *argv[])
 		checkCudaErrors(cudaMalloc((void**)&dev_multiset,N*DIMENSION*sizeof(float)));
 		checkCudaErrors(cudaMalloc((void**)&dev_multiset_dist,ROUNDED_N*sizeof(float)));
 		checkCudaErrors(cudaMalloc((void**)&dev_multiset_dist_scanned,ROUNDED_N*sizeof(float)));
-		checkCudaErrors(cudaMalloc((void**)&dev_multiset_dist_partition_sums,ROUNDED_N*sizeof(float)));
+		checkCudaErrors(cudaMalloc((void**)&dev_multiset_dist_partition_sums,(ROUNDED_N/WARP_SIZE)*sizeof(float)));
+		checkCudaErrors(cudaMalloc((void**)&dev_multiset_dist_partition_sums_scanned,(ROUNDED_N/WARP_SIZE)*sizeof(float)));
 		checkCudaErrors(cudaMalloc((void**)&dev_l2_centers,NUM_CLUSTER*DIMENSION*sizeof(float)));
 		checkCudaErrors(cudaMalloc((void**)&dev_l2_center_indices,NUM_CLUSTER*sizeof(int)));
 
@@ -355,43 +366,17 @@ int main(int argc, char const *argv[])
 				// gettimeofday(&sample_start,NULL);
 				cudaEventRecord(start_gpu,0);
 				// ----------------------- Mean-Heuristic on GPU starts -------------------------------------------
-					int m_i = 0;
 					tempPointIndex 	= (((float) rand())/RAND_MAX)*N; // Choose first point uniformly at random here itself
-					cudaMemcpy(dev_l2_centers, dev_multiset + tempPointIndex*DIMENSION, DIMENSION*sizeof(float),cudaMemcpyDeviceToDevice);
-					for (m_i = 0; m_i < NUM_CLUSTER; ++m_i) // 1 rnd num used in one iteratn,so NUM_CLUSTER random nums required
+					checkCudaErrors(cudaMemcpy(dev_l2_centers, dev_multiset + tempPointIndex*DIMENSION, DIMENSION*sizeof(float),cudaMemcpyDeviceToDevice));
+					// printf("Index of first point chosen::%d\n",tempPointIndex);
+					for (int m_i = 0; m_i < NUM_CLUSTER; ++m_i) // 1 rnd num used in one iteratn,so NUM_CLUSTER random nums required
 					{
 						rnd[2*m_i] 		= ((float) rand())/RAND_MAX;
 						rnd[2*m_i+1] 	= ((float) rand())/RAND_MAX;
 					}
-					cudaMemcpy(dev_rnd,rnd,2*N*sizeof(float),cudaMemcpyHostToDevice);// Can be overlapped with computation
+					checkCudaErrors(cudaMemcpy(dev_rnd,rnd,2*N*sizeof(float),cudaMemcpyHostToDevice));// Can be overlapped with computation
 
-					// for(m_i = 1; m_i< NUM_CLUSTER; ++m_i) // get NUM_CLUSTER samples out of sampled points 
-					// {
-						// comp_dist_strided<<<ROUNDED_N/32 ,32,0>>>(dev_multiset, dev_multiset_dist, dev_l2_centers, m_i, N, DIMENSION, ROUNDED_N);
-						// // comp_dist<<<1,WARP_SIZE>>>(dev_multiset, dev_multiset_dist, dev_multiset_dist_partition_sums, dev_l2_centers, m_i, N, DIMENSION, ROUNDED_N);
-						
-						// // if(ROUNDED_N != WARP_SIZE*WARP_SIZE)
-						// // {
-						// // 	printf("ROUNDED_N is not WARP_SIZE*WARP_SIZE\n"); exit(0);							
-						// // }
-						// // inc_scan_1_block_SE<<<1,WARP_SIZE,WARP_SIZE*sizeof(float)>>>(dev_multiset_dist_partition_sums, dev_multiset_dist_partition_sums, dev_multiset_dist_scanned);
-
-						// // Make the cost/distance cumulative -- try using step efficient scan here
-						// // inc_scan_1<<<1,ROUNDED_N,ROUNDED_N*sizeof(float),stream2>>>(dev_multiset_dist, dev_multiset_dist_scanned, ROUNDED_N);
-						
-						// inc_scan_1_block_SE<<<ROUNDED_N/WARP_SIZE,WARP_SIZE,WARP_SIZE*sizeof(float)>>>(dev_multiset_dist, dev_multiset_dist_scanned, dev_multiset_dist_partition_sums);
-						// inc_scan_1_block_SE<<<ROUNDED_N/1024,WARP_SIZE,WARP_SIZE*sizeof(float)>>>(dev_multiset_dist_partition_sums, dev_multiset_dist_partition_sums, dev_multiset_dist_partition_sums + WARP_SIZE - 1);
-						// inc_scan_1_add<<<1,WARP_SIZE,0>>>(dev_multiset_dist_scanned,dev_multiset_dist_partition_sums,WARP_SIZE);
-
-						// // Sample points from distribution
-						// sample_from_distribution_gpu_copy<<<1,WARP_SIZE,0>>>(dev_multiset_dist_partition_sums, dev_multiset_dist_scanned, dev_l2_centers + m_i*DIMENSION, dev_rnd + 2*m_i, WARP_SIZE, ROUNDED_N, 1,dev_multiset);  // for SE scan
-
-						// // sample_from_distribution_gpu_strided_copy<<<1,WARP_SIZE,0,stream3>>>(dev_multiset_dist_scanned, dev_l2_centers + m_i*DIMENSION, dev_rnd + m_i, ROUNDED_N, 1,dev_multiset); // for simple scan
-						
-						// // sample_from_distribution_gpu_strided_copy<<<1,WARP_SIZE>>>(dev_multiset_dist, dev_l2_centers + m_i*DIMENSION, dev_rnd + m_i, ROUNDED_N, 1,dev_multiset); // blocked mem access
-					// }
-
-					// for(m_i =  0 + 1; m_i< NUM_CLUSTER; ++m_i) // Combining kernels on GPU
+					// for(int m_i =  0 + 1; m_i< NUM_CLUSTER; ++m_i) // Combining kernels on GPU
 					// {
 
 					// 	comp_dist_package<<<1,WARP_SIZE>>>(dev_multiset, dev_multiset_dist, dev_multiset_dist_partition_sums, dev_l2_centers, m_i, N, DIMENSION, WARP_SIZE, dev_rnd + 2*m_i); // Blocked computation
@@ -399,8 +384,37 @@ int main(int argc, char const *argv[])
 					// 	// Sample points from distribution
 					// 	// sample_from_distribution_gpu_copy<<<1,WARP_SIZE,0>>>(dev_multiset_dist_partition_sums, dev_multiset_dist, dev_l2_centers + m_i*DIMENSION, dev_rnd + 2*m_i, WARP_SIZE, N, 1,dev_multiset);
 					// }
+				
+					comp_dist_package_with_loop<<<1,WARP_SIZE*WARP_SIZE>>>(dev_multiset, dev_multiset_dist, dev_multiset_dist_scanned, dev_multiset_dist_partition_sums, dev_multiset_dist_partition_sums_scanned, dev_l2_centers, N,dev_rnd); // Blocked computation
+					// comp_dist_package_with_loop_original<<<1,WARP_SIZE>>>(dev_multiset, dev_multiset_dist, dev_multiset_dist_partition_sums, dev_l2_centers, N,dev_rnd); // Blocked computation, correct
 
-					comp_dist_package_with_loop<<<1,WARP_SIZE>>>(dev_multiset, dev_multiset_dist, dev_multiset_dist_partition_sums, dev_l2_centers, N, DIMENSION, WARP_SIZE, dev_rnd); // Blocked computation
+					// float* multiset_dist 		= (float*)malloc(ROUNDED_N*sizeof(float));
+					// float* multiset_dist_scnd 	= (float*)malloc(ROUNDED_N*sizeof(float));
+					// float* multiset_dist_prtn_sums 	= (float*)malloc((ROUNDED_N/WARP_SIZE)*sizeof(float));
+					// float* multiset_dist_prtn_sums_scnd 	= (float*)malloc((ROUNDED_N/WARP_SIZE)*sizeof(float));
+
+					// checkCudaErrors(cudaMemcpy(multiset,dev_multiset,N*DIMENSION*sizeof(float),cudaMemcpyDeviceToHost));
+					// checkCudaErrors(cudaMemcpy(l2_centers, dev_l2_centers, NUM_CLUSTER*DIMENSION*sizeof(float),cudaMemcpyDeviceToHost));
+					// checkCudaErrors(cudaMemcpy(multiset_dist,dev_multiset_dist,ROUNDED_N*sizeof(float),cudaMemcpyDeviceToHost));
+					// checkCudaErrors(cudaMemcpy(multiset_dist_scnd,dev_multiset_dist_scanned,ROUNDED_N*sizeof(float),cudaMemcpyDeviceToHost));
+					// checkCudaErrors(cudaMemcpy(multiset_dist_prtn_sums,dev_multiset_dist_partition_sums,(ROUNDED_N/WARP_SIZE)*sizeof(float),cudaMemcpyDeviceToHost));
+					// checkCudaErrors(cudaMemcpy(multiset_dist_prtn_sums_scnd,dev_multiset_dist_partition_sums_scanned,(ROUNDED_N/WARP_SIZE)*sizeof(float),cudaMemcpyDeviceToHost));
+
+					// for (int pIter = 0; pIter < ROUNDED_N; ++pIter)
+					// {
+					// 	if(pIter < NUM_CLUSTER)
+					// 		printf("%d\t\t%f\t%f\n",pIter,l2_centers[pIter*DIMENSION],l2_centers[pIter*DIMENSION + 1]);
+					// 	if( pIter < WARP_SIZE)
+					// 		printf("%d\t%f\t%f\t%40.1f\t%40.1f\t%40.1f\t%40.1f\n",pIter,multiset[pIter*DIMENSION],multiset[pIter*DIMENSION+1],multiset_dist[pIter], multiset_dist_scnd[pIter], multiset_dist_prtn_sums[pIter],multiset_dist_prtn_sums_scnd[pIter] );
+					// 	else
+					// 		printf("%d\t%f\t%f\t%40.1f\t%40.1f\t\n",pIter,multiset[pIter*DIMENSION],multiset[pIter*DIMENSION + 1],multiset_dist[pIter], multiset_dist_scnd[pIter]);
+
+					// 	if ((pIter + 1) % WARP_SIZE == 0 )
+					// 	{
+					// 		// printf("%f\t%f\n",multiset_dist_prtn_sums[(pIter)/WARP_SIZE],multiset_dist_prtn_sums_scnd[pIter/WARP_SIZE]);
+					// 		printf("\n");
+					// 	}
+					// }
 
 					// gettimeofday(&sample_end,NULL);
 					// samplingTime += get_time_diff(sample_start,sample_end);
@@ -1393,11 +1407,354 @@ __global__ void comp_dist_package(float* dev_data,float* dev_distances,float* de
 	
 }
 
-__global__ void comp_dist_package_with_loop(float* dev_data,float* dev_distances,float* dev_partition_sums, float* dev_centers,int numPoints,int dev_dimension,int numGPUThreads,float *dev_rnd)
+
+// This is compact kernel which does all the level2-sampling work
+// This just choose 1 sample per iteration
+// TODO
+// Currently the code is working for 1 threadBlock with 32 threads
+// First I should make this implementation generic, I might need to make  extend scan implementation further and so on
+// May be it threadsize can be brought down, then it would be great
+// Can change comp_dist part's implementation to strided
+// Use texture and global memory here and there
+
+// This should be launched with at least as many threads so that no thread needs to compute cost of more than one point
+__global__ void comp_dist_package_with_loop(float* dev_data,float* dev_distances,float* dev_distances_scanned, float* dev_partition_sums,float* dev_partition_sums_scanned, float* dev_centers,int numPoints,float *dev_rnd)
+{
+
+	// In this form of things we can probabl do away with distance array and just keep scanned_dist array
+	// Just need one more var per thread to achieve this
+	// for (int centerIter = 1; centerIter < NUM_CLUSTER; ++centerIter)
+	for (int centerIter = 1; centerIter < NUM_CLUSTER; ++centerIter)
+	{
+		int dataIndex 	= threadIdx.x + blockIdx.x*blockDim.x;		
+		if(dataIndex < numPoints) // Rest of the threads will be idle!
+		{
+			if (centerIter == 1) // This is the first time dev_distances will get its values --> Can take this out of loop
+			{
+				float min_dist 	= 0, temp;
+				for (int j = 0; j < DIMENSION; ++j)
+				{
+					temp = dev_data[dataIndex*DIMENSION + j] - dev_centers[j]; // Computing cost wrt 1st center
+					min_dist += temp*temp;
+				}
+				dev_distances[dataIndex] = min_dist*min_dist;
+			}
+			else
+			{
+				// float local_dist 	= 0,temp;
+				// float min_dist = FLT_MAX;
+				// for (int i = 0; i < centerIter; ++i)
+				// {
+				// 	for (int j = 0; j < DIMENSION; ++j)
+				// 	{
+				// 		temp = dev_data[dataIndex*DIMENSION + j] - dev_centers[i*DIMENSION + j];
+				// 		local_dist += temp*temp;
+				// 	}
+				// 	min_dist = min(min_dist , local_dist*local_dist);
+				// }
+				// dev_distances[dataIndex] 		= min_dist; // No need to square min_dist here, it is already squared value
+
+				int i = centerIter - 1; // i denotes the last center that was added to the list of centers
+				float local_dist 	= 0,temp;
+				for (int j = 0; j < DIMENSION; ++j)
+				{
+					temp = dev_data[dataIndex*DIMENSION + j] - dev_centers[i*DIMENSION + j];
+					local_dist += temp*temp;
+				}
+				float min_dist = min(dev_distances[dataIndex] , local_dist*local_dist);
+				dev_distances[dataIndex] 		= min_dist; // No need to square min_dist here, it is already squared value
+			}		
+		}
+		else
+		{
+			dev_distances[dataIndex]  = 0;  // Can do this once via memset as well, if that improves performance
+		}
+		
+		__syncthreads();
+		__shared__ float temp[WARP_SIZE*WARP_SIZE];
+		int thid 		= threadIdx.x;  // threadId modulo threadBlock
+		int startIndex 	= WARP_SIZE*blockIdx.x; // Each thread-block gets to scan an array of size n, with startIndex as computed
+		
+		temp[thid] 	= dev_distances[startIndex + thid]; // load input into shared memory
+
+		if(thid%WARP_SIZE >= 1)
+			temp[thid] = temp[thid-1] + temp[thid];
+		if(thid%WARP_SIZE >= 2)
+			temp[thid] = temp[thid-2] + temp[thid];
+		if(thid%WARP_SIZE >= 4)
+			temp[thid] = temp[thid-4] + temp[thid];
+		if(thid%WARP_SIZE >= 8)
+			temp[thid] = temp[thid-8] + temp[thid];
+		if(thid%WARP_SIZE >= 16)
+			temp[thid] = temp[thid-16] + temp[thid];
+
+		dev_distances_scanned[startIndex + thid] = temp[thid];
+		if((thid+ 1)%WARP_SIZE == 0) // For 1 block and many threads
+			dev_partition_sums[(thid+1)/WARP_SIZE] = temp[thid];
+
+		// if(thid == WARP_SIZE - 1) For multiple blocks
+		// 	dev_partition_sums[blockIdx.x] = temp[thid]; 
+
+		__syncthreads();
+
+		if ((blockIdx.x == 0) && (thid < WARP_SIZE))
+		{
+			temp[thid] 	= dev_partition_sums[thid]; // load input into shared memory
+
+			if(thid >= 1)
+				temp[thid] = temp[thid-1] + temp[thid];
+			if(thid >= 2)
+				temp[thid] = temp[thid-2] + temp[thid];
+			if(thid >= 4)
+				temp[thid] = temp[thid-4] + temp[thid];
+			if(thid >= 8)
+				temp[thid] = temp[thid-8] + temp[thid];
+			if(thid >= 16)
+				temp[thid] = temp[thid-16] + temp[thid];
+
+			dev_partition_sums_scanned[thid] = temp[thid];  // ??? can sync_threads solve the problem here because of which i needed to use _scanned for part sums
+		}
+
+		__syncthreads();
+		// This entire function takes around 55 units and this samling part  alone takes around 40 units out of it
+		if ((blockIdx.x == 0) && (threadIdx.x == 0))
+		{
+			float* dev_multiset = dev_centers + centerIter*DIMENSION; 
+
+			int per_thread = WARP_SIZE;
+			int numValidPartitions = per_thread;
+			int start,mid,end,groupNo,pointIndex;
+			float prob;
+
+			// first pick a block from the local_sums distribution
+			// int groupNo =sample_from_distribution(partition_sums,0, numValidPartitions, rnd[2*tid]*partition_sums[numValidPartitions-1]);
+
+			start 	= 0;
+			end 	= numValidPartitions - 1;
+		    prob 	= dev_rnd[2*centerIter]*dev_partition_sums_scanned[end];
+		    while(start <= end) 
+		    {
+		        mid = (start+end)/2;
+		        if(prob < dev_partition_sums_scanned[mid-1]) 
+		        {
+		            end = mid-1;
+		        } 
+		        else if(prob > dev_partition_sums_scanned[mid]) 
+		        {
+		            start = mid+1;
+		        } 
+		        else 
+		        {
+		            break;
+		        }
+		    }
+		    groupNo =  mid;
+
+			// the start and end index of this block
+			// int startIndex 	= groupNo*per_thread;
+			// int endIndex 	= min((groupNo + 1)*per_thread, NUM_POINTS);
+			// now sample from the cumulative distribution of the block
+			// int pointIndex = sample_from_distribution(distances, startIndex, endIndex, rnd[2*tid+1]*distances[endIndex-1]);
+
+			start 	= groupNo*per_thread;
+			end 	= min((groupNo + 1)*per_thread, numPoints) - 1;
+		    prob 	= dev_rnd[2*centerIter + 1]*dev_distances_scanned[end];
+		    while(start <= end) 
+		    {
+		        mid = (start+end)/2;
+		        if(prob < dev_distances_scanned[mid-1]) 
+		        {
+		            end = mid-1;
+		        } 
+		        else if(prob > dev_distances_scanned[mid]) 
+		        {
+		            start = mid+1;
+		        } 
+		        else 
+		        {
+		            break;
+		        }
+		    }
+		    pointIndex = mid;
+		    for (int j = 0; j < DIMENSION; ++j)
+		    {
+		    	dev_multiset[j] = dev_data[pointIndex*DIMENSION + j];
+		    }
+		}
+		__syncthreads();
+	}
+	
+}
+
+// THis version was meant to run for multiple blocks but then there can not be synchronization between thread blocks
+// so this implementation resulted in erroneous execution
+// Must be called with nBlocks,WARP_SIZE configuration, and make sure that nBlocks*WARP_SIZE >= numPoints
+__global__ void comp_dist_package_with_loop_multipleBlocks(float* dev_data,float* dev_distances,float* dev_distances_scanned, float* dev_partition_sums,float* dev_partition_sums_scanned, float* dev_centers,int numPoints,float *dev_rnd)
+{
+
+	// In this form of things we can probabl do away with distance array and just keep scanned_dist array
+	// Just need one more var per thread to achieve this
+	// for (int centerIter = 1; centerIter < NUM_CLUSTER; ++centerIter)
+	for (int centerIter = 1; centerIter < NUM_CLUSTER; ++centerIter)
+	{
+		int dataIndex 	= threadIdx.x + blockIdx.x*blockDim.x;		
+		if(dataIndex < numPoints) // Rest of the threads will be idle!
+		{
+			if (centerIter == 1) // This is the first time dev_distances will get its values --> Can take this out of loop
+			{
+				float min_dist 	= 0, temp;
+				for (int j = 0; j < DIMENSION; ++j)
+				{
+					temp = dev_data[dataIndex*DIMENSION + j] - dev_centers[j]; // Computing cost wrt 1st center
+					min_dist += temp*temp;
+				}
+				dev_distances[dataIndex] = min_dist*min_dist;
+			}
+			else
+			{
+				// float local_dist 	= 0,temp;
+				// float min_dist = FLT_MAX;
+				// for (int i = 0; i < centerIter; ++i)
+				// {
+				// 	for (int j = 0; j < DIMENSION; ++j)
+				// 	{
+				// 		temp = dev_data[dataIndex*DIMENSION + j] - dev_centers[i*DIMENSION + j];
+				// 		local_dist += temp*temp;
+				// 	}
+				// 	min_dist = min(min_dist , local_dist*local_dist);
+				// }
+				// dev_distances[dataIndex] 		= min_dist; // No need to square min_dist here, it is already squared value
+
+				int i = centerIter - 1; // i denotes the last center that was added to the list of centers
+				float local_dist 	= 0,temp;
+				for (int j = 0; j < DIMENSION; ++j)
+				{
+					temp = dev_data[dataIndex*DIMENSION + j] - dev_centers[i*DIMENSION + j];
+					local_dist += temp*temp;
+				}
+				float min_dist = min(dev_distances[dataIndex] , local_dist*local_dist);
+				dev_distances[dataIndex] 		= min_dist; // No need to square min_dist here, it is already squared value
+			}		
+		}
+		else
+		{
+			dev_distances[dataIndex]  = 0;  // Can do this once via memset as well, if that improves performance
+		}
+		
+		__shared__ float temp[WARP_SIZE];
+		int thid 		= threadIdx.x;  // threadId modulo threadBlock
+		int startIndex 	= WARP_SIZE*blockIdx.x; // Each thread-block gets to scan an array of size n, with startIndex as computed
+		
+		temp[thid] 	= dev_distances[startIndex + thid]; // load input into shared memory
+
+		if(thid >= 1)
+			temp[thid] = temp[thid-1] + temp[thid];
+		if(thid >= 2)
+			temp[thid] = temp[thid-2] + temp[thid];
+		if(thid >= 4)
+			temp[thid] = temp[thid-4] + temp[thid];
+		if(thid >= 8)
+			temp[thid] = temp[thid-8] + temp[thid];
+		if(thid >= 16)
+			temp[thid] = temp[thid-16] + temp[thid];
+
+		dev_distances_scanned[startIndex + thid] = temp[thid];
+		if(thid == WARP_SIZE - 1)
+			dev_partition_sums[blockIdx.x] = temp[thid]; 
+
+		if (blockIdx.x == 0)
+		{
+			temp[thid] 	= dev_partition_sums[thid]; // load input into shared memory
+
+			if(thid >= 1)
+				temp[thid] = temp[thid-1] + temp[thid];
+			if(thid >= 2)
+				temp[thid] = temp[thid-2] + temp[thid];
+			if(thid >= 4)
+				temp[thid] = temp[thid-4] + temp[thid];
+			if(thid >= 8)
+				temp[thid] = temp[thid-8] + temp[thid];
+			if(thid >= 16)
+				temp[thid] = temp[thid-16] + temp[thid];
+
+			dev_partition_sums_scanned[thid] = temp[thid];  // ??? can sync_threads solve the problem here because of which i needed to use _scanned for part sums
+		}
+
+		// This entire function takes around 55 units and this samling part  alone takes around 40 units out of it
+		if ((blockIdx.x == 0) && (threadIdx.x == 0))
+		{
+			float* dev_multiset = dev_centers + centerIter*DIMENSION; 
+
+			int per_thread = WARP_SIZE;
+			int numValidPartitions = per_thread;
+			int start,mid,end,groupNo,pointIndex;
+			float prob;
+
+			// first pick a block from the local_sums distribution
+			// int groupNo =sample_from_distribution(partition_sums,0, numValidPartitions, rnd[2*tid]*partition_sums[numValidPartitions-1]);
+
+			start 	= 0;
+			end 	= numValidPartitions - 1;
+		    prob 	= dev_rnd[2*centerIter]*dev_partition_sums_scanned[end];
+		    while(start <= end) 
+		    {
+		        mid = (start+end)/2;
+		        if(prob < dev_partition_sums_scanned[mid-1]) 
+		        {
+		            end = mid-1;
+		        } 
+		        else if(prob > dev_partition_sums_scanned[mid]) 
+		        {
+		            start = mid+1;
+		        } 
+		        else 
+		        {
+		            break;
+		        }
+		    }
+		    groupNo =  mid;
+
+			// the start and end index of this block
+			// int startIndex 	= groupNo*per_thread;
+			// int endIndex 	= min((groupNo + 1)*per_thread, NUM_POINTS);
+			// now sample from the cumulative distribution of the block
+			// int pointIndex = sample_from_distribution(distances, startIndex, endIndex, rnd[2*tid+1]*distances[endIndex-1]);
+
+			start 	= groupNo*per_thread;
+			end 	= min((groupNo + 1)*per_thread, numPoints) - 1;
+		    prob 	= dev_rnd[2*centerIter + 1]*dev_distances_scanned[end];
+		    while(start <= end) 
+		    {
+		        mid = (start+end)/2;
+		        if(prob < dev_distances_scanned[mid-1]) 
+		        {
+		            end = mid-1;
+		        } 
+		        else if(prob > dev_distances_scanned[mid]) 
+		        {
+		            start = mid+1;
+		        } 
+		        else 
+		        {
+		            break;
+		        }
+		    }
+		    pointIndex = mid;
+		    for (int j = 0; j < DIMENSION; ++j)
+		    {
+		    	dev_multiset[j] = dev_data[pointIndex*DIMENSION + j];
+		    }
+		}
+	}
+	
+}
+// This is the original version , just backing it up
+__global__ void comp_dist_package_with_loop_original(float* dev_data,float* dev_distances,float* dev_partition_sums, float* dev_centers,int numPoints,float *dev_rnd)
 {
 	for (int centerIter = 1; centerIter < NUM_CLUSTER; ++centerIter)
 	{
 		// Starting off with very simplistic 1-D threads blocks and 1-D grids
+		int numGPUThreads = gridDim.x*blockDim.x;
 		int tid = threadIdx.x + blockIdx.x*blockDim.x;
 		int per_thread = (numPoints + numGPUThreads - 1)/numGPUThreads;// Term in the numerator is added to that we can get ceiling of numPoints/numGPUThreads
 		int startIndex = tid*per_thread;
@@ -1405,14 +1762,13 @@ __global__ void comp_dist_package_with_loop(float* dev_data,float* dev_distances
 		float min_dist = FLT_MAX, local_dist,temp,prev_val = 0,old_prev_val=0;
 		for (int dataIndex = startIndex; dataIndex < endIndex; ++dataIndex)
 		{
-
 			if (centerIter == 1) // This is the first time dev_distances will get its values
 			{
 				min_dist 	= 0;
 				int i = 0;
-				for (int j = 0; j < dev_dimension; ++j)
+				for (int j = 0; j < DIMENSION; ++j)
 				{
-					temp = dev_data[dataIndex*dev_dimension + j] - dev_centers[i*dev_dimension + j];
+					temp = dev_data[dataIndex*DIMENSION + j] - dev_centers[i*DIMENSION + j];
 					min_dist += temp*temp;
 				}
 				dev_distances[dataIndex] = min_dist*min_dist + prev_val; // make it cumulative as you calculate it
@@ -1424,9 +1780,9 @@ __global__ void comp_dist_package_with_loop(float* dev_data,float* dev_distances
 				min_dist 	= dev_distances[dataIndex] - old_prev_val;
 				old_prev_val= dev_distances[dataIndex];
 				local_dist 	= 0;
-				for (int j = 0; j < dev_dimension; ++j)
+				for (int j = 0; j < DIMENSION; ++j)
 				{
-					temp = dev_data[dataIndex*dev_dimension + j] - dev_centers[i*dev_dimension + j];
+					temp = dev_data[dataIndex*DIMENSION + j] - dev_centers[i*DIMENSION + j];
 					local_dist += temp*temp;
 				}
 				min_dist = min(min_dist,local_dist*local_dist);
@@ -1458,13 +1814,6 @@ __global__ void comp_dist_package_with_loop(float* dev_data,float* dev_distances
 
 			dev_partition_sums[startIndex + thid] = temp[thid];
 		}
-
-		// comp(dev_multiset, dev_multiset_dist, dev_multiset_dist_partition_sums, dev_l2_centers, m_i, N, DIMENSION, WARP_SIZE); // Blocked computation
-
-		// sample(dev_multiset_dist_partition_sums, dev_multiset_dist, dev_l2_centers + m_i*DIMENSION, dev_rnd + 2*m_i, WARP_SIZE, N, 1,dev_multiset);  // for SE scan
-
-		// sample_from_distribution_gpu_copy(float* dev_partition_sums,float* dev_distances, 
-		// 	float* dev_multiset, float* dev_rnd,int per_thread, int dev_NUM_POINTS, int dev_num_samples,float* dev_data) 
 
 		if ((blockIdx.x == 0) && (threadIdx.x == 0))
 		{
@@ -1532,6 +1881,7 @@ __global__ void comp_dist_package_with_loop(float* dev_data,float* dev_distances
 	}
 	
 }
+
 // Optimised to use previous distance values to calculate min_dist for points in next iteration
 // Also makes use of constant memory for storing centers
 __global__ void comp_dist_glbl(float* dev_data,float* dev_distances,float* dev_partition_sums,int centerIter,int numPoints,int dev_dimension,int numGPUThreads)
