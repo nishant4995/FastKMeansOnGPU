@@ -368,7 +368,7 @@ int main(int argc, char const *argv[])
 				// ----------------------- Mean-Heuristic on GPU starts -------------------------------------------
 					tempPointIndex 	= (((float) rand())/RAND_MAX)*N; // Choose first point uniformly at random here itself
 					checkCudaErrors(cudaMemcpy(dev_l2_centers, dev_multiset + tempPointIndex*DIMENSION, DIMENSION*sizeof(float),cudaMemcpyDeviceToDevice));
-					// printf("Index of first point chosen::%d\n",tempPointIndex);
+					printf("Index of first point chosen::%d\n",tempPointIndex);
 					for (int m_i = 0; m_i < NUM_CLUSTER; ++m_i) // 1 rnd num used in one iteratn,so NUM_CLUSTER random nums required
 					{
 						rnd[2*m_i] 		= ((float) rand())/RAND_MAX;
@@ -388,33 +388,33 @@ int main(int argc, char const *argv[])
 					comp_dist_package_with_loop<<<1,WARP_SIZE*WARP_SIZE>>>(dev_multiset, dev_multiset_dist, dev_multiset_dist_scanned, dev_multiset_dist_partition_sums, dev_multiset_dist_partition_sums_scanned, dev_l2_centers, N,dev_rnd); // Blocked computation
 					// comp_dist_package_with_loop_original<<<1,WARP_SIZE>>>(dev_multiset, dev_multiset_dist, dev_multiset_dist_partition_sums, dev_l2_centers, N,dev_rnd); // Blocked computation, correct
 
-					// float* multiset_dist 		= (float*)malloc(ROUNDED_N*sizeof(float));
-					// float* multiset_dist_scnd 	= (float*)malloc(ROUNDED_N*sizeof(float));
-					// float* multiset_dist_prtn_sums 	= (float*)malloc((ROUNDED_N/WARP_SIZE)*sizeof(float));
-					// float* multiset_dist_prtn_sums_scnd 	= (float*)malloc((ROUNDED_N/WARP_SIZE)*sizeof(float));
+					float* multiset_dist 		= (float*)malloc(ROUNDED_N*sizeof(float));
+					float* multiset_dist_scnd 	= (float*)malloc(ROUNDED_N*sizeof(float));
+					float* multiset_dist_prtn_sums 	= (float*)malloc((ROUNDED_N/WARP_SIZE)*sizeof(float));
+					float* multiset_dist_prtn_sums_scnd 	= (float*)malloc((ROUNDED_N/WARP_SIZE)*sizeof(float));
 
-					// checkCudaErrors(cudaMemcpy(multiset,dev_multiset,N*DIMENSION*sizeof(float),cudaMemcpyDeviceToHost));
-					// checkCudaErrors(cudaMemcpy(l2_centers, dev_l2_centers, NUM_CLUSTER*DIMENSION*sizeof(float),cudaMemcpyDeviceToHost));
-					// checkCudaErrors(cudaMemcpy(multiset_dist,dev_multiset_dist,ROUNDED_N*sizeof(float),cudaMemcpyDeviceToHost));
-					// checkCudaErrors(cudaMemcpy(multiset_dist_scnd,dev_multiset_dist_scanned,ROUNDED_N*sizeof(float),cudaMemcpyDeviceToHost));
-					// checkCudaErrors(cudaMemcpy(multiset_dist_prtn_sums,dev_multiset_dist_partition_sums,(ROUNDED_N/WARP_SIZE)*sizeof(float),cudaMemcpyDeviceToHost));
-					// checkCudaErrors(cudaMemcpy(multiset_dist_prtn_sums_scnd,dev_multiset_dist_partition_sums_scanned,(ROUNDED_N/WARP_SIZE)*sizeof(float),cudaMemcpyDeviceToHost));
+					checkCudaErrors(cudaMemcpy(multiset,dev_multiset,N*DIMENSION*sizeof(float),cudaMemcpyDeviceToHost));
+					checkCudaErrors(cudaMemcpy(l2_centers, dev_l2_centers, NUM_CLUSTER*DIMENSION*sizeof(float),cudaMemcpyDeviceToHost));
+					checkCudaErrors(cudaMemcpy(multiset_dist,dev_multiset_dist,ROUNDED_N*sizeof(float),cudaMemcpyDeviceToHost));
+					checkCudaErrors(cudaMemcpy(multiset_dist_scnd,dev_multiset_dist_scanned,ROUNDED_N*sizeof(float),cudaMemcpyDeviceToHost));
+					checkCudaErrors(cudaMemcpy(multiset_dist_prtn_sums,dev_multiset_dist_partition_sums,(ROUNDED_N/WARP_SIZE)*sizeof(float),cudaMemcpyDeviceToHost));
+					checkCudaErrors(cudaMemcpy(multiset_dist_prtn_sums_scnd,dev_multiset_dist_partition_sums_scanned,(ROUNDED_N/WARP_SIZE)*sizeof(float),cudaMemcpyDeviceToHost));
 
-					// for (int pIter = 0; pIter < ROUNDED_N; ++pIter)
-					// {
-					// 	if(pIter < NUM_CLUSTER)
-					// 		printf("%d\t\t%f\t%f\n",pIter,l2_centers[pIter*DIMENSION],l2_centers[pIter*DIMENSION + 1]);
-					// 	if( pIter < WARP_SIZE)
-					// 		printf("%d\t%f\t%f\t%40.1f\t%40.1f\t%40.1f\t%40.1f\n",pIter,multiset[pIter*DIMENSION],multiset[pIter*DIMENSION+1],multiset_dist[pIter], multiset_dist_scnd[pIter], multiset_dist_prtn_sums[pIter],multiset_dist_prtn_sums_scnd[pIter] );
-					// 	else
-					// 		printf("%d\t%f\t%f\t%40.1f\t%40.1f\t\n",pIter,multiset[pIter*DIMENSION],multiset[pIter*DIMENSION + 1],multiset_dist[pIter], multiset_dist_scnd[pIter]);
+					for (int pIter = 0; pIter < ROUNDED_N; ++pIter)
+					{
+						if(pIter < NUM_CLUSTER)
+							printf("%d\t\t%f\t%f\n",pIter,l2_centers[pIter*DIMENSION],l2_centers[pIter*DIMENSION + 1]);
+						if( pIter < WARP_SIZE)
+							printf("%d\t%f\t%f\t%40.1f\t%40.1f\t%40.1f\t%40.1f\n",pIter,multiset[pIter*DIMENSION],multiset[pIter*DIMENSION+1],multiset_dist[pIter], multiset_dist_scnd[pIter], multiset_dist_prtn_sums[pIter],multiset_dist_prtn_sums_scnd[pIter] );
+						else
+							printf("%d\t%f\t%f\t%40.1f\t%40.1f\t\n",pIter,multiset[pIter*DIMENSION],multiset[pIter*DIMENSION + 1],multiset_dist[pIter], multiset_dist_scnd[pIter]);
 
-					// 	if ((pIter + 1) % WARP_SIZE == 0 )
-					// 	{
-					// 		// printf("%f\t%f\n",multiset_dist_prtn_sums[(pIter)/WARP_SIZE],multiset_dist_prtn_sums_scnd[pIter/WARP_SIZE]);
-					// 		printf("\n");
-					// 	}
-					// }
+						if ((pIter + 1) % WARP_SIZE == 0 )
+						{
+							// printf("%f\t%f\n",multiset_dist_prtn_sums[(pIter)/WARP_SIZE],multiset_dist_prtn_sums_scnd[pIter/WARP_SIZE]);
+							printf("\n");
+						}
+					}
 
 					// gettimeofday(&sample_end,NULL);
 					// samplingTime += get_time_diff(sample_start,sample_end);
@@ -1423,7 +1423,6 @@ __global__ void comp_dist_package_with_loop(float* dev_data,float* dev_distances
 
 	// In this form of things we can probabl do away with distance array and just keep scanned_dist array
 	// Just need one more var per thread to achieve this
-	// for (int centerIter = 1; centerIter < NUM_CLUSTER; ++centerIter)
 	for (int centerIter = 1; centerIter < NUM_CLUSTER; ++centerIter)
 	{
 		int dataIndex 	= threadIdx.x + blockIdx.x*blockDim.x;		
@@ -1490,7 +1489,7 @@ __global__ void comp_dist_package_with_loop(float* dev_data,float* dev_distances
 
 		dev_distances_scanned[startIndex + thid] = temp[thid];
 		if((thid+ 1)%WARP_SIZE == 0) // For 1 block and many threads
-			dev_partition_sums[(thid+1)/WARP_SIZE] = temp[thid];
+			dev_partition_sums[(thid)/WARP_SIZE] = temp[thid];
 
 		// if(thid == WARP_SIZE - 1) For multiple blocks
 		// 	dev_partition_sums[blockIdx.x] = temp[thid]; 
