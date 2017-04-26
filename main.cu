@@ -383,49 +383,10 @@ int main(int argc, char const *argv[])
 						rnd[2*m_i+1] 	= ((float) rand())/RAND_MAX;
 					}
 					checkCudaErrors(cudaMemcpy(dev_rnd,rnd,2*NUM_CLUSTER*sizeof(float),cudaMemcpyHostToDevice));// Can be overlapped with computation
-
-					// for(int m_i =  0 + 1; m_i< NUM_CLUSTER; ++m_i) // Combining kernels on GPU
-					// {
-
-					// 	comp_dist_package<<<1,WARP_SIZE>>>(dev_multiset, dev_multiset_dist, dev_multiset_dist_partition_sums, dev_l2_centers, m_i, N, DIMENSION, WARP_SIZE, dev_rnd + 2*m_i); // Blocked computation
-						
-					// 	// Sample points from distribution
-					// 	// sample_from_distribution_gpu_copy<<<1,WARP_SIZE,0>>>(dev_multiset_dist_partition_sums, dev_multiset_dist, dev_l2_centers + m_i*DIMENSION, dev_rnd + 2*m_i, WARP_SIZE, N, 1,dev_multiset);
-					// }
-				
 					comp_dist_package_with_loop<<<1,WARP_SIZE*WARP_SIZE>>>(dev_multiset, dev_multiset_dist, dev_multiset_dist_partition_sums, dev_l2_centers, N,dev_rnd); // Blocked computation
+
 					// comp_dist_package_with_loop_original<<<1,WARP_SIZE>>>(dev_multiset, dev_multiset_dist, dev_multiset_dist_partition_sums, dev_l2_centers, N,dev_rnd); // Blocked computation, correct
 
-					// float* multiset_dist 		= (float*)malloc(ROUNDED_N*sizeof(float));
-					// float* multiset_dist_scnd 	= (float*)malloc(ROUNDED_N*sizeof(float));
-					// float* multiset_dist_prtn_sums 	= (float*)malloc((ROUNDED_N/WARP_SIZE)*sizeof(float));
-					// float* multiset_dist_prtn_sums_scnd 	= (float*)malloc((ROUNDED_N/WARP_SIZE)*sizeof(float));
-
-					// checkCudaErrors(cudaMemcpy(multiset,dev_multiset,N*DIMENSION*sizeof(float),cudaMemcpyDeviceToHost));
-					// checkCudaErrors(cudaMemcpy(l2_centers, dev_l2_centers, NUM_CLUSTER*DIMENSION*sizeof(float),cudaMemcpyDeviceToHost));
-					// checkCudaErrors(cudaMemcpy(multiset_dist,dev_multiset_dist,ROUNDED_N*sizeof(float),cudaMemcpyDeviceToHost));
-					// checkCudaErrors(cudaMemcpy(multiset_dist_scnd,dev_multiset_dist_scanned,ROUNDED_N*sizeof(float),cudaMemcpyDeviceToHost));
-					// checkCudaErrors(cudaMemcpy(multiset_dist_prtn_sums,dev_multiset_dist_partition_sums,(ROUNDED_N/WARP_SIZE)*sizeof(float),cudaMemcpyDeviceToHost));
-					// checkCudaErrors(cudaMemcpy(multiset_dist_prtn_sums_scnd,dev_multiset_dist_partition_sums_scanned,(ROUNDED_N/WARP_SIZE)*sizeof(float),cudaMemcpyDeviceToHost));
-
-					// for (int pIter = 0; pIter < ROUNDED_N; ++pIter)
-					// {
-					// 	if(pIter < NUM_CLUSTER)
-					// 		printf("%d\t\t%f\t%f\n",pIter,l2_centers[pIter*DIMENSION],l2_centers[pIter*DIMENSION + 1]);
-					// 	if( pIter < WARP_SIZE)
-					// 		printf("%d\t%f\t%f\t%40.1f\t%40.1f\t%40.1f\t%40.1f\n",pIter,multiset[pIter*DIMENSION],multiset[pIter*DIMENSION+1],multiset_dist[pIter], multiset_dist_scnd[pIter], multiset_dist_prtn_sums[pIter],multiset_dist_prtn_sums_scnd[pIter] );
-					// 	else
-					// 		printf("%d\t%f\t%f\t%40.1f\t%40.1f\t\n",pIter,multiset[pIter*DIMENSION],multiset[pIter*DIMENSION + 1],multiset_dist[pIter], multiset_dist_scnd[pIter]);
-
-					// 	if ((pIter + 1) % WARP_SIZE == 0 )
-					// 	{
-					// 		// printf("%f\t%f\n",multiset_dist_prtn_sums[(pIter)/WARP_SIZE],multiset_dist_prtn_sums_scnd[pIter/WARP_SIZE]);
-					// 		printf("\n");
-					// 	}
-					// }
-
-					// gettimeofday(&sample_end,NULL);
-					// samplingTime += get_time_diff(sample_start,sample_end);
 					cudaEventRecord(stop_gpu,0);
 					cudaEventSynchronize(stop_gpu);
 					cudaEventElapsedTime(&tempTime,start_gpu,stop_gpu);
@@ -435,16 +396,15 @@ int main(int argc, char const *argv[])
 					// gettimeofday(&sample_start,NULL);
 					// Find largest cluster now
 					// CPU Version 
-					cudaMemcpy(l2_centers, dev_l2_centers, NUM_CLUSTER*DIMENSION*sizeof(float),cudaMemcpyDeviceToHost);
-					cudaMemcpy(multiset, dev_multiset, N*DIMENSION*sizeof(float), cudaMemcpyDeviceToHost);
-					float*	nextCenter =  mean_heuristic_assign(multiset,N,l2_centers);
-					memcpy(centers + i*DIMENSION,nextCenter,DIMENSION*sizeof(float));
+					// cudaMemcpy(l2_centers, dev_l2_centers, NUM_CLUSTER*DIMENSION*sizeof(float),cudaMemcpyDeviceToHost);
+					// cudaMemcpy(multiset, dev_multiset, N*DIMENSION*sizeof(float), cudaMemcpyDeviceToHost);
+					// float*	nextCenter =  mean_heuristic_assign(multiset,N,l2_centers);
+					// memcpy(centers + i*DIMENSION,nextCenter,DIMENSION*sizeof(float));
 
 					// printf("Center::%f,%f\n",centers[i*DIMENSION],centers[i*DIMENSION+1] );
 					// GPU version
-					// mean_heuristic_assign_gpu<<<1,64>>>(dev_multiset,N,dev_l2_centers,dev_centers_temp);
-					// cudaMemcpy(centers + i*DIMENSION,dev_centers_temp,DIMENSION*sizeof(float),cudaMemcpyDeviceToHost);
-
+					mean_heuristic_assign_gpu<<<1,1024>>>(dev_multiset,N,dev_l2_centers,dev_centers_temp);
+					cudaMemcpy(centers + i*DIMENSION,dev_centers_temp,DIMENSION*sizeof(float),cudaMemcpyDeviceToHost);
 					cudaMemcpyToSymbol(dev_centers_global , centers + i*DIMENSION, DIMENSION*sizeof(float), i*DIMENSION*sizeof(float), cudaMemcpyHostToDevice);
 
 				// ------------------------ Mean-Heuristic on GPU ends ---------------------------------------------
@@ -658,7 +618,6 @@ int main(int argc, char const *argv[])
 		cudaFree((void**)&dev_meta_block_sums);
 		
 	}
-
 	logger = fopen(resultFile,"w");
 	fprintf(logger, "Initial cost: %f %f\n",mean(initCost,numRuns),sd(initCost,numRuns));
 	fprintf(logger, "Final cost:   %f %f\n",mean(finalCost,numRuns),sd(finalCost,numRuns));
@@ -1467,14 +1426,9 @@ __global__ void comp_dist_package_with_loop(float* dev_data,float* dev_distances
 				distance = min(distance , local_dist*local_dist);
 			}		
 		}
-		// else
-		// {
-		// 	dev_distances[dataIndex]  = 0;  // Can do this once via memset as well, if that improves performance
-		// }
 		
 		// __syncthreads();//-- Not needed here, the warp which has finished its cost computation work is the one which
 		// goes ahead and scans its part of the data array
-
 	
 		// int startIndex 	= WARP_SIZE*blockIdx.x; // Each thread-block gets to scan an array of size n, with startIndex as computed
 		// temp[thid] 	= dev_distances[startIndex + thid]; // load input into shared memory
@@ -1499,10 +1453,8 @@ __global__ void comp_dist_package_with_loop(float* dev_data,float* dev_distances
 		__syncthreads(); // Needed as partition_sums need to be computed before it can be made cumulative
 
 		
-		if (dataIndex < WARP_SIZE) // Just need 1 warp to do things here
+		if (dataIndex < WARP_SIZE) // Just need 1 warp to do scan partition_sums
 		{
-			// temp[dataIndex] 	= dev_partition_sums[dataIndex]; // load input into shared memory
-
 			if(dataIndex >= 1)
 				dev_partition_sums[dataIndex] = dev_partition_sums[dataIndex-1] + dev_partition_sums[dataIndex];
 			if(dataIndex >= 2)
@@ -1513,14 +1465,6 @@ __global__ void comp_dist_package_with_loop(float* dev_data,float* dev_distances
 				dev_partition_sums[dataIndex] = dev_partition_sums[dataIndex-8] + dev_partition_sums[dataIndex];
 			if(dataIndex >= 16)
 				dev_partition_sums[dataIndex] = dev_partition_sums[dataIndex-16] + dev_partition_sums[dataIndex];
-
-			// dev_partition_sums[dataIndex] = temp[dataIndex];  // ??? can sync_threads solve the problem here because of which i needed to use _scanned for part sums
-		
-			// }	
-			// __syncthreads();// -- Not needed as the thread going to do the sampling part is the one which will be doing the
-			// previous scan operation on partition_sums, and there is sync after the sampling and before scanning partition_sums
-			// so there will not be any erroneour execution
-			
 
 			// Use an entire WARP to sample faster
 			// This works when each segment of distance array has size = WARP_SIZE and 
@@ -2587,7 +2531,7 @@ __global__ void mean_heuristic_assign_gpu(float* dev_multiset,int multisetSize, 
 		int centerIndex = 0;
 		for (int k = 0; k < DIMENSION; ++k)
 		{
-			 temp  = dev_l2_samples[0*DIMENSION +  k] - dev_multiset[pointIndex*DIMENSION + k];
+			 temp  = dev_multiset[pointIndex*DIMENSION + k] - dev_l2_samples[0*DIMENSION +  k];
 			 min_dist += temp*temp;
 		}
 		for (int j = 1; j < NUM_CLUSTER; j++) 
@@ -2607,83 +2551,87 @@ __global__ void mean_heuristic_assign_gpu(float* dev_multiset,int multisetSize, 
 		}
 		for(int j = 0; j < DIMENSION; j++)
 		{
-			cluster_means[centerIndex*DIMENSION + j] += dev_multiset[pointIndex*DIMENSION + j]; // Need to make sure this is atomic
+			// cluster_means[centerIndex*DIMENSION + j] += dev_multiset[pointIndex*DIMENSION + j]; // Need to make sure this is atomic
+			
+			atomicAdd(cluster_means + centerIndex*DIMENSION + j, dev_multiset[pointIndex*DIMENSION + j]); // Need to make sure this is atomic
 		}
-		counts[centerIndex]++;
+		// counts[centerIndex]++;
+		atomicAdd(counts + 	centerIndex ,1);
 		pointIndex += blockDim.x;
     }
 	
-	// // Finds max count but need to find index for maxCount
-	// 	if(thid >= 1)
-	// 	{
-	// 		counts[thid] = max(counts[thid-1] , counts[thid]);
-	// 		if( counts[thid - 1] > counts[thid])
-	// 		{
-	// 			counts[thid] = counts[thid - 1];
-	// 			counts_index[thid] = thid - 1; 
-	// 		}
-	// 		else
-	// 		{
-	// 			counts[thid] = counts[thid];
-	// 			counts_index[thid] = thid;
-	// 		}
-	// 	}
-	// 	if(thid >= 2)
-	// 	{
-	// 		counts[thid] = max(counts[thid-2] , counts[thid]);
-	// 		if( counts[thid - 2] > counts[thid])
-	// 		{
-	// 			counts[thid] = counts[thid - 2];
-	// 			counts_index[thid] = thid - 2; 
-	// 		}
-	// 		else
-	// 		{
-	// 			counts[thid] = counts[thid];
-	// 			counts_index[thid] = thid;
-	// 		}
-	// 	}
-	// 	if(thid >= 4)
-	// 	{
-	// 		counts[thid] = max(counts[thid-4] , counts[thid]);
-	// 		if( counts[thid - 4] > counts[thid])
-	// 		{
-	// 			counts[thid] = counts[thid - 4];
-	// 			counts_index[thid] = thid - 4; 
-	// 		}
-	// 		else
-	// 		{
-	// 			counts[thid] = counts[thid];
-	// 			counts_index[thid] = thid;
-	// 		}
-	// 	}
-	// 	if(thid >= 8)
-	// 	{
-	// 		counts[thid] = max(counts[thid-8] , counts[thid]);
-	// 		if( counts[thid - 8] > counts[thid])
-	// 		{
-	// 			counts[thid] = counts[thid - 8];
-	// 			counts_index[thid] = thid - 8; 
-	// 		}
-	// 		else
-	// 		{
-	// 			counts[thid] = counts[thid];
-	// 			counts_index[thid] = thid;
-	// 		}
-	// 	}
-	// 	if(thid >= 16)
-	// 	{
-	// 		counts[thid] = max(counts[thid-16] , counts[thid]);
-	// 		if( counts[thid - 16] > counts[thid])
-	// 		{
-	// 			counts[thid] = counts[thid - 16];
-	// 			counts_index[thid] = thid - 16; 
-	// 		}
-	// 		else
-	// 		{
-	// 			counts[thid] = counts[thid];
-	// 			counts_index[thid] = thid;
-	// 		}
-	// 	}
+	////// Finds max count but need to find index for maxCount
+		// 	if(thid >= 1)
+		// 	{
+		// 		counts[thid] = max(counts[thid-1] , counts[thid]);
+		// 		if( counts[thid - 1] > counts[thid])
+		// 		{
+		// 			counts[thid] = counts[thid - 1];
+		// 			counts_index[thid] = thid - 1; 
+		// 		}
+		// 		else
+		// 		{
+		// 			counts[thid] = counts[thid];
+		// 			counts_index[thid] = thid;
+		// 		}
+		// 	}
+		// 	if(thid >= 2)
+		// 	{
+		// 		counts[thid] = max(counts[thid-2] , counts[thid]);
+		// 		if( counts[thid - 2] > counts[thid])
+		// 		{
+		// 			counts[thid] = counts[thid - 2];
+		// 			counts_index[thid] = thid - 2; 
+		// 		}
+		// 		else
+		// 		{
+		// 			counts[thid] = counts[thid];
+		// 			counts_index[thid] = thid;
+		// 		}
+		// 	}
+		// 	if(thid >= 4)
+		// 	{
+		// 		counts[thid] = max(counts[thid-4] , counts[thid]);
+		// 		if( counts[thid - 4] > counts[thid])
+		// 		{
+		// 			counts[thid] = counts[thid - 4];
+		// 			counts_index[thid] = thid - 4; 
+		// 		}
+		// 		else
+		// 		{
+		// 			counts[thid] = counts[thid];
+		// 			counts_index[thid] = thid;
+		// 		}
+		// 	}
+		// 	if(thid >= 8)
+		// 	{
+		// 		counts[thid] = max(counts[thid-8] , counts[thid]);
+		// 		if( counts[thid - 8] > counts[thid])
+		// 		{
+		// 			counts[thid] = counts[thid - 8];
+		// 			counts_index[thid] = thid - 8; 
+		// 		}
+		// 		else
+		// 		{
+		// 			counts[thid] = counts[thid];
+		// 			counts_index[thid] = thid;
+		// 		}
+		// 	}
+		// 	if(thid >= 16)
+		// 	{
+		// 		counts[thid] = max(counts[thid-16] , counts[thid]);
+		// 		if( counts[thid - 16] > counts[thid])
+		// 		{
+		// 			counts[thid] = counts[thid - 16];
+		// 			counts_index[thid] = thid - 16; 
+		// 		}
+		// 		else
+		// 		{
+		// 			counts[thid] = counts[thid];
+		// 			counts_index[thid] = thid;
+		// 		}
+		// 	}
+	/////////////////////////////////////////////////////////////////////////////////
 
 	if( tid == 0)
 	{
@@ -2702,6 +2650,7 @@ __global__ void mean_heuristic_assign_gpu(float* dev_multiset,int multisetSize, 
 	    	dev_centers_temp[i] =  cluster_means[maxIndex*DIMENSION + i] / counts[maxIndex];
 	    }
 	}
+	// printf("tid::%d\n",tid );
 }
 
 float distance(float* p1, float* p2)
