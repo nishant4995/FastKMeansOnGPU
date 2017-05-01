@@ -107,8 +107,10 @@ __global__ void comp_dist_glbl(float* dev_data,float* dev_distances,float* dev_p
 __global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,int centerIter,int numPoints,int dev_dimension, int rndedNumPoints);
 __global__ void comp_dist_strided(float* dev_data,float* dev_distances,float* dev_centers,int centerIter,int numPoints,int dev_dimension,int rndedNumPoints);
 __global__ void comp_dist_package(float* dev_data,float* dev_distances,float* dev_partition_sums, float* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads,float* dev_rnd);
-__global__ void comp_dist_package_with_loop(float* dev_data,float* dev_distances_scanned,float* dev_partition_sums, float* dev_centers,int numPoints,float *dev_rnd);
+__global__ void comp_dist_package_with_loop(float* dev_data, float* dev_centers,int numPoints,float *dev_rnd);
 __global__ void comp_dist_package_with_loop_original(float* dev_data,float* dev_distances,float* dev_partition_sums, float* dev_centers,int numPoints,float *dev_rnd);
+
+__global__ void mean_heuristic_GPU(float* dev_data, float* dev_centers,int numPoints,float *dev_rnd,float* dev_centers_temp);
 
 
 
@@ -139,4 +141,7 @@ float* d2_sample(float* data,float* centers,int numPts, int numSamples, int size
 float* d2_sample_2(float* data,float* centers,int numPts, int numSamples, int size, float* distances);
 float* d2_sample_3(float* data,float* centers,int numPts, int size, float* distances);
 void write_centers_to_file(float* centers);
+
+int roundToPowerOf2(int num);
+
 #endif
