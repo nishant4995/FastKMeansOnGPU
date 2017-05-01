@@ -236,24 +236,13 @@ int main(int argc, char const *argv[])
 			for(randNumIter = 0; randNumIter < 2*N; ++randNumIter)
 				rnd[randNumIter] 	= ((float) rand())/RAND_MAX;
 			checkCudaErrors(cudaMemcpy(dev_rnd,rnd,2*N*sizeof(float),cudaMemcpyHostToDevice));
-			
-			// for(int rIter = 2*N; rIter < rndNumReqd; ++rIter)
-			// 	rnd[rIter] 	= ((float) rand())/RAND_MAX;
-			// checkCudaErrors(cudaMemcpy(dev_rnd + 2*N,rnd + 2*N,(rndNumReqd-2*N)*sizeof(float),cudaMemcpyHostToDevice));
-
+		
 			float compDistTime = 0, meanHeuristicTime = 0;
 			for(i = 1; i < NUM_CLUSTER; i++)
 			{
 				// cudaEventRecord(start_gpu,0);
 				// -----------------------GPU-Based implementation of D2-Sample ends------------------------------
-					// Send 2*N random number to GPU
-						// for(j = 0; j < N; ++j)
-						// {
-						// 	rnd[2*j] 	= ((float) rand())/RAND_MAX;
-						// 	rnd[2*j+1] 	= ((float) rand())/RAND_MAX;
-						// }
-						// checkCudaErrors(cudaMemcpy(dev_rnd,rnd,2*N*sizeof(float),cudaMemcpyHostToDevice));// Can be overlapped with computation	
-
+				
 					// For blocked access pattern
 						// comp_dist_glbl<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, i, NUM_POINTS, DIMENSION, numGPUThreads);
 						// checkCudaErrors(cudaMemcpy(partition_sums,dev_partition_sums,numGPUThreads*sizeof(float),cudaMemcpyDeviceToHost));	
@@ -289,8 +278,9 @@ int main(int argc, char const *argv[])
 						sample_from_distribution_gpu_copy<<<numSampleBlocks,numSampleTperB,0,compStream>>>(dev_partition_sums, dev_distances_scanned, dev_multiset, dev_rnd + (i-1)*(2*N + 2*NUM_CLUSTER), WARP_SIZE,  NUM_POINTS, N,dev_data);
 
 				// -----------------------GPU-Based implementation of D2-Sample ends------------------------------
+				
+				// Copying 2*NUM_CLUSTER random numbers on GPU to be used by meanHeuristic in next iteration
 				int tempBound = i*(2*N + 2*NUM_CLUSTER);
-				// printf("rndNumReqd::%d\t2*N::%d\t2*NUM_CLUSTER::%d\trandNumIter::%d\ttempBound::%d\tStartAddress::%d\n", rndNumReqd, 2*N,2*NUM_CLUSTER,randNumIter, tempBound, tempBound - 2*NUM_CLUSTER );
 				for(; randNumIter < tempBound; ++randNumIter)
 					rnd[randNumIter] 	= ((float) rand())/RAND_MAX;
 				checkCudaErrors(cudaMemcpyAsync(dev_rnd + tempBound - 2*NUM_CLUSTER,rnd + tempBound - 2*NUM_CLUSTER,2*NUM_CLUSTER*sizeof(float),cudaMemcpyHostToDevice, copyStream));
@@ -302,31 +292,10 @@ int main(int argc, char const *argv[])
 
 				// cudaEventRecord(start_gpu,compStream);
 				// ----------------------- Mean-Heuristic on GPU starts -------------------------------------------
-					// Send 2*NUM_CLUSTER random number to GPU
-						// for (int m_i = 0; m_i < NUM_CLUSTER; ++m_i) 
-						// {
-						// 	rnd[2*m_i] 		= ((float) rand())/RAND_MAX;
-						// 	rnd[2*m_i+1] 	= ((float) rand())/RAND_MAX;
-						// }
-						// checkCudaErrors(cudaMemcpy(dev_rnd,rnd,2*NUM_CLUSTER*sizeof(float),cudaMemcpyHostToDevice));// Can be overlapped with computation
 
 					// comp_dist_package_with_loop<<<1,WARP_SIZE*WARP_SIZE,0,compStream>>>(dev_multiset,dev_l2_centers, N,dev_rnd + i*(2*N + 2*NUM_CLUSTER)-2*N ); // Blocked computation
 
 					// comp_dist_package_with_loop_original<<<1,WARP_SIZE>>>(dev_multiset, dev_multiset_dist, dev_multiset_dist_partition_sums, dev_l2_centers, N,dev_rnd); // Blocked computation, correct
-
-					mean_heuristic_GPU<<<1,WARP_SIZE*WARP_SIZE,0,compStream>>>(dev_multiset,dev_l2_centers, N,dev_rnd + i*(2*N + 2*NUM_CLUSTER) - 2*N, dev_centers_temp );
-
-
-					// Need to shift this to later part is mean_heuristic_GPU is used
-					if( i < NUM_CLUSTER -1)// We don't want any random number to be transeffered to GPU in the end, hence this if
-					{
-						int tempBound = 2*N + i*(2*N + 2*NUM_CLUSTER);
-						// printf("rndNumReqd::%d\t2*N::%d\t2*NUM_CLUSTER::%d\trandNumIter::%d\ttempBound::%d\tStartAddress::%d\n", rndNumReqd, 2*N,2*NUM_CLUSTER,randNumIter, tempBound, tempBound - 2*N );
-						for(; randNumIter < tempBound; ++randNumIter)
-							rnd[randNumIter] 	= ((float) rand())/RAND_MAX;
-
-						checkCudaErrors(cudaMemcpyAsync(dev_rnd + tempBound - 2*N ,rnd + tempBound - 2*N, 2*N*sizeof(float),cudaMemcpyHostToDevice, copyStream));
-					}
 
 					// checkCudaErrors(cudaEventRecord(stop_gpu,compStream));
 					// cudaEventSynchronize(stop_gpu);
@@ -343,10 +312,25 @@ int main(int argc, char const *argv[])
 
 					// GPU version
 					// mean_heuristic_assign_gpu<<<1,WARP_SIZE*WARP_SIZE,0,compStream>>>(dev_multiset,N,dev_l2_centers,dev_centers_temp);
-					// checkCudaErrors(cudaMemcpy(centers + i*DIMENSION,dev_centers_temp,DIMENSION*sizeof(float),cudaMemcpyDeviceToHost)); -- Copied in one go from GPU to CPU in the end
-					// cudaMemcpyToSymbol(dev_centers_global , dev_centers_temp, DIMENSION*sizeof(float), i*DIMENSION*sizeof(float), cudaMemcpyDeviceToDevice); -- These 2 copies are avoided. Directly copy to dev_centers_global
 
-					checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global , dev_centers_temp, DIMENSION*sizeof(float), i*DIMENSION*sizeof(float), cudaMemcpyHostToDevice));
+					// Combined comp_dist_package and mean_heuristic_assign_gpu into 1 function
+					mean_heuristic_GPU<<<1,WARP_SIZE*WARP_SIZE,0,compStream>>>(dev_multiset,dev_l2_centers, N,dev_rnd + i*(2*N + 2*NUM_CLUSTER) - 2*N, dev_centers_temp );
+
+					// Copying 2*N random numbers on GPU to be used by sampling multiset in next iteration
+					if( i < NUM_CLUSTER -1)// We don't want any random number to be transeffered to GPU in the end, hence this if
+					{
+						int tempBound = 2*N + i*(2*N + 2*NUM_CLUSTER);
+						for(; randNumIter < tempBound; ++randNumIter)
+							rnd[randNumIter] 	= ((float) rand())/RAND_MAX;
+
+						checkCudaErrors(cudaMemcpyAsync(dev_rnd + tempBound - 2*N ,rnd + tempBound - 2*N, 2*N*sizeof(float),cudaMemcpyHostToDevice, copyStream));
+					}
+
+					// Copy next chosen center to dev_centers_global and centers array(copying to centers array can be avoideds)
+					// checkCudaErrors(cudaMemcpy(centers + i*DIMENSION,dev_centers_temp,DIMENSION*sizeof(float),cudaMemcpyDeviceToHost)); -- Copying to centers array from GPU
+					// cudaMemcpyToSymbol(dev_centers_global , dev_centers_temp, DIMENSION*sizeof(float), i*DIMENSION*sizeof(float), cudaMemcpyDeviceToDevice); -- Now copying from centers array to dev_centers_GPU. These 2 copies are avoided. Directly copy to dev_centers_global
+
+					checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global , dev_centers_temp, DIMENSION*sizeof(float), i*DIMENSION*sizeof(float), cudaMemcpyDeviceToDevice));
 
 				// ------------------------ Mean-Heuristic on GPU ends ---------------------------------------------
 
