@@ -148,12 +148,12 @@ int main(int argc, char* argv[]){
 			for(int i = 0; i < NUM_POINTS; i++){
 				weights[i] = 1;
 			}
-			// vector<double> distances(NUM_POINTS);
+			vector<double> distances(NUM_POINTS);
 			for(int i = 0; i < NUM_CLUSTER; i++){
 				gettimeofday(&sample_start,NULL);
 				// printf("------------------------start--------------------------------------\n");
-				vector<Point> multiset = d2_sample(data,centers,weights,N,i);
-				// vector<Point> multiset = d2_sample_2(data,centers,weights,N,i,distances);
+				// vector<Point> multiset = d2_sample(data,centers,weights,N,i);
+				vector<Point> multiset = d2_sample_2(data,centers,weights,N,i,distances);
 				gettimeofday(&sample_end,NULL);
 				printf("Time taken for d2_sample::%d-->%f\n",i,get_time_diff(sample_start, sample_end));
 				samplingTime_1[i] = get_time_diff(sample_start,sample_end);

@@ -52,3 +52,29 @@ It might make sense to have mean heuristic on CPU, I can try to optimize that co
 
 Implement Lloyds algo on GPU
 Implement Vornoi partitionin on GPU, it might not make sense as it is already very fast on CPU, and on GPU we might need several kernels to be able to do that compuation....
+
+------------------------------
+
+Using Nvidia Visual Profiler
+First generate an output file using command line profiler nvprof
+/usr/loca/cuda-8.0/bin/nvprof -o <outFilename> -f <program name> <program args>
+
+-o: To create an output file
+-f: To overwrite if file with same name already exists
+Then open nvvp 
+	/usr/local/cuda-8.0/bin/nvvp
+Import the outFile created using nvprof
+
+The details can be be also seen in terminal by following command
+	/usr/local/cuda-8.0/bin/nvprof -i <outFileName>
+
+-i: To import an outputfile already created
+
+
+Using cudaMemcheck
+
+/usr/local/cuda-8.0/bin/cuda-memcheck [--option value] <prog name> <prog args>
+
+/usr/local/cuda-8.0/bin/cuda-memcheck --binary-patching no <prog name> <prog args>
+
+binary-patching: If set to yes, then it patches the binary of the program on the go on.
