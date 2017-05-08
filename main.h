@@ -55,12 +55,17 @@
 	// #endif
 	// #endif
 
-#define NUM_POINTS 100000
-#define DIMENSION 2
-#define ROUNDED_DIMENSION 2
-#define NUM_CLUSTER 100
-#define ROUNDED_CLUSTER 128
-#define DATA "birch1"
+#define NUM_POINTS 70000
+#define DIMENSION 784
+#define NUM_CLUSTER 10
+#define DATA "mnist"
+
+// #define NUM_POINTS 100000
+// #define DIMENSION 2
+// #define ROUNDED_DIMENSION 2
+// #define NUM_CLUSTER 100
+// #define ROUNDED_CLUSTER 128
+// #define DATA "birch3"
 
 // Should be power of 2 and Max value is 1024 which is max number of threads_per_block on my GPU
 #define SCAN_BLOCK_SIZE 32
@@ -140,6 +145,15 @@ __global__ void mean_heuristic_assign_gpu(float* dev_multiset,int multisetSize, 
 float* d2_sample(float* data,float* centers,int numPts, int numSamples, int size);
 float* d2_sample_2(float* data,float* centers,int numPts, int numSamples, int size, float* distances);
 float* d2_sample_3(float* data,float* centers,int numPts, int size, float* distances);
+// This version of d2_sample has optimized cost calculation by using cost computed in last iteration
+// This one does not use the cumulative distance array to get costs computed in last iteration,
+// instead it makes another copy of distance array which is cumulative, for sampling purposes
+float* d2_sample_4(float* data,float* centers,int numPts, int numSamples, int size, float* distances);
+// This version of d2_sample has optimized cost calculation by using cost computed in last iteration
+// This is specially optimized for mean_heurisitic
+// This one does not make distance array cumulative in-place, instead a separate array is used to to get cumulative distances
+float* d2_sample_5(float* data,float* centers,int numPts, int size, float* distances);
+
 void write_centers_to_file(float* centers);
 
 int roundToPowerOf2(int num);

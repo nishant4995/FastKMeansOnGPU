@@ -67,16 +67,16 @@ typedef float Point __attribute__((vector_size(ROUNDED_DIMENSION*sizeof(float)))
 // typedef float Distances __attribute__((vector_size(ROUNDED_CLUSTER*sizeof(float))));
 
 
-static inline float distance(Point, Point);
-static inline int sample_from_distribution(vector<float> &, int, int, float);
-static inline float get_time_diff(struct timeval, struct timeval);
+static inline double distance(Point, Point);
+static inline int sample_from_distribution(vector<double> &, int, int, double);
+static inline double get_time_diff(struct timeval, struct timeval);
 
-static inline string mean(float*,int);
-static inline string sd(float*,int);
+static inline string mean(double*,int);
+static inline string sd(double*,int);
 
 vector<Point> d2_sample(vector<Point> &, vector<Point> &, vector<int> &, int, int);
-vector<Point> d2_sample_2(vector<Point> &,vector<Point> &,vector<int> &, int, int,vector<float> &);
+vector<Point> d2_sample_2(vector<Point> &,vector<Point> &,vector<int> &, int, int,vector<double> &);
 Point d2_sample_3(vector<Point> &data,vector<Point> &centers,vector<int> &weights,int num_samples, int size);
 Point mean_heuristic(vector<Point> &);
-vector<Point> independent_sample(vector<Point> &, vector<Point> &, float);
+vector<Point> independent_sample(vector<Point> &, vector<Point> &, double);
 vector<Point> read_centers_from_file();

@@ -278,7 +278,7 @@ else
 	@echo "Sample is ready - all dependencies have been met"
 endif
 
-main.o: main.cu
+main.o: main.cu main.h
 	$(EXEC) $(NVCC) $(INCLUDES) -O3 $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
 main: main.o
@@ -294,5 +294,7 @@ clobber: clean
 
 omp:
 	g++ -D BIRCH1 -g mainOMP.cpp -std=c++11 -O3 -msse4.2 -fopenmp -o birch1 -lm
+	g++ -D BIRCH2 -g mainOMP.cpp -std=c++11 -O3 -msse4.2 -fopenmp -o birch2 -lm
+	g++ -D BIRCH3 -g mainOMP.cpp -std=c++11 -O3 -msse4.2 -fopenmp -o birch3 -lm
 cleanomp:
 	rm birch1
