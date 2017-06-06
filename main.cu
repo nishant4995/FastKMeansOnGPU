@@ -1,10 +1,5 @@
 #include "main.h"
 
-// Initial cost: 109883399602176.000000 0.000000 For seed 32
-// Final cost:   95299603267584.000000 0.000000
-// Number of iterations: 8.000000 0.000000
-// Initialization time:  0.110906 0.000000
-// Per iteration time:   0.014346 0.000000
 
 // g++ -D BIRCH1 -g mainOMP.cpp -std=c++11 -O3 -msse4.2 -fopenmp -o birch1 -lm
 
@@ -14,32 +9,26 @@
 // mt19937 gen(rd());
 // unsigned int max_val = gen.max();
 
-void test()
-{
-	FILE* reader = fopen("../data/train-images.idx3-ubyte","rb");
-	int ctr = 0;
-	while(!feof(reader))
-	{
-		unsigned int temp;
-		int f = fread(&temp,4,1,reader);
-		// fscanf(reader,"%d",&temp);
-		printf("temp::%u\n",temp);
-		ctr++;
-		if(ctr > 4)
-			break;
-
-	}
-	exit(0);
-}
-
-
 int numThreads = 1;
 __constant__ float dev_centers_global[NUM_CLUSTER*DIMENSION]; // For using constant memory
 
 
 int main(int argc, char const *argv[])
 {
-	// test();
+
+	// float* a ,*b;
+	// a = (float*)malloc(DIMENSION*sizeof(float));
+	// b = (float*)malloc(DIMENSION*sizeof(float));
+
+	// for (int myIter = 0; myIter < DIMENSION; ++myIter)
+	// {
+	// 	a[myIter] = 2;
+	// 	b[myIter] = 0;
+	// }
+	// printf("Dimension::%d\n",DIMENSION );
+	// printf("Distance_1::%f\n",distance(a,b));
+
+	// exit(0);
 	// Due to limited precision of float, getting back actual distance array from scanned version of it causes errors,
 	// This errors apparently makes things worse when we start using BLOCK_SIZE = 64 and more.
 	// This is an instance of underflow which can be observed when first center is fixed to be data[2]
@@ -51,10 +40,16 @@ int main(int argc, char const *argv[])
 	// printf("a4\t%f\n",a4 );
 	// exit(0);
 
+
+	printf("ROUNDED_NUM_POINTS::%d\n",ROUNDED_NUM_POINTS);
+	printf("NUM_PARTITIONS::%d\n",NUM_PARTITIONS);
+	printf("ROUNDED_NUM_PARTITIONS::%d\n",ROUNDED_NUM_PARTITIONS);
+	printf("NUM_META_PARTITIONS::%d\n",NUM_META_PARTITIONS);
+
 	// testScan();
 	// Currently no argument processing logic, will always run birch1 for 2 times with N=10k
-	// srand(32);
-	srand(time(NULL));
+	srand(32);
+	// srand(time(NULL));
 
 		// for (int i = 0; i < 10; ++i)
 		// {
@@ -138,21 +133,24 @@ int main(int argc, char const *argv[])
 
 		float* data;
 		FILE* reader;
-		int i = 0,j = 0;
+		int i_read = 0,j_read = 0;
 		data 	= (float*)malloc(NUM_POINTS*DIMENSION*sizeof(float));
 		reader 	= fopen(dataFileName,"r");
 
 		gettimeofday(&start,NULL);
 
-		while(i < NUM_POINTS)
+		while(i_read < NUM_POINTS)
 		{
-			j = 0;
-			while(j < DIMENSION)
+			j_read = 0;
+			while(j_read < DIMENSION)
 			{
-				int k =	fscanf(reader,"\t%f",&(data[i*DIMENSION + j]));
-				j++;
+				int k =	fscanf(reader,"\t%f",&(data[i_read*DIMENSION + j_read]));
+				// printf("\t%f",data[i_read*DIMENSION + j_read]);
+				j_read++;
 			}
-			i++;
+			// printf("\n");
+
+			i_read++;
 		}
 		gettimeofday(&end,NULL);
 		// printf("Time take to read data::%f::%f\n",get_time_diff(start,end),get_time_diff(start,end)/NUM_CLUSTER); 
@@ -187,7 +185,8 @@ int main(int argc, char const *argv[])
 
 		float* centers;// 		= (float*)malloc(NUM_CLUSTER*DIMENSION*sizeof(float));	
 		float* rnd;// 			= (float*)malloc(2*N*sizeof(float));
-		int rndNumReqd = NUM_CLUSTER*(2*N + 2*NUM_CLUSTER); //2N for sampling multiset,2*NUM_CLUSTER for level2sampling from multiset
+		int rndNumReqd = (2*N + 2*NUM_CLUSTER); //2N for sampling multiset,2*NUM_CLUSTER for level2sampling from multiset
+		// Re-using the array of rnd numberd across iterations, so that it is simpler to code and debug
 		cudaHostAlloc((void**)&centers,NUM_CLUSTER*DIMENSION*sizeof(float),cudaHostAllocDefault);
 		cudaHostAlloc((void**)&rnd,rndNumReqd*sizeof(float),cudaHostAllocDefault);
 
@@ -243,6 +242,7 @@ int main(int argc, char const *argv[])
 		cudaStreamCreate(&stream3);
 
 		gettimeofday(&start,NULL);
+		printf("Starting\n");
 		// initialize the initial centers
 		if(method == 2) // d2-seeding
 		{  
@@ -261,12 +261,11 @@ int main(int argc, char const *argv[])
 				// checkCudaErrors(cudaMemcpy(dev_rnd,rnd,2*N*sizeof(float),cudaMemcpyHostToDevice));
 			
 				// float compDistTime = 0, meanHeuristicTime = 0;
-				// for(i = 1; i < NUM_CLUSTER; i++)
+				// for(int i = 1; i < NUM_CLUSTER; i++)
 				// {
-				// 	// printf("Choosing center::%d\n",i );
+				// 	// printf("Choosing center::%d::%f\n",i, ((float) rand())/RAND_MAX );
 				// 	// cudaEventRecord(start_gpu,0);
 				// 	// -----------------------GPU-Based implementation of D2-Sample ends------------------------------
-					
 				// 		// For blocked access pattern
 				// 			// comp_dist_glbl<<<numBlocks,numThreadsPerBlock>>>(dev_data, dev_distances, dev_partition_sums, i, NUM_POINTS, DIMENSION, numGPUThreads);
 				// 			// checkCudaErrors(cudaMemcpy(partition_sums,dev_partition_sums,numGPUThreads*sizeof(float),cudaMemcpyDeviceToHost));	
@@ -282,7 +281,7 @@ int main(int argc, char const *argv[])
 
 				// 		// For strided memory access pattern
 				// 			// Compute Cost/distance for each point
-				// 			comp_dist_glbl_strided<<<numBlocks,numThreadsPerBlock,0,compStream>>>(dev_data, dev_distances, i, NUM_POINTS, DIMENSION, ROUNDED_NUM_POINTS);
+				// 			comp_dist_glbl_strided<<<numBlocks,numThreadsPerBlock,0,compStream>>>(dev_data, dev_distances, i, NUM_POINTS, ROUNDED_NUM_POINTS);
 
 				// 			// Make the cost/distance cumulative
 				// 			// inc_scan_1_block<<<NUM_PARTITIONS,BLOCK_SIZE,BLOCK_SIZE*sizeof(float)>>>(dev_distances,dev_distances_scanned, BLOCK_SIZE,dev_partition_sums);
@@ -299,15 +298,15 @@ int main(int argc, char const *argv[])
 							
 				// 			// Sample points from distribution
 				// 			// sample_from_distribution_gpu<<<numSampleBlocks,numSampleTperB>>>(dev_partition_sums, dev_distances_scanned, dev_sampled_indices, dev_rnd, WARP_SIZE, NUM_POINTS, N);
-				// 			sample_from_distribution_gpu_copy<<<numSampleBlocks,numSampleTperB,0,compStream>>>(dev_partition_sums, dev_distances_scanned, dev_multiset, dev_rnd + (i-1)*(2*N + 2*NUM_CLUSTER), WARP_SIZE,  NUM_POINTS, N,dev_data);
-
+				// 			sample_from_distribution_gpu_copy<<<numSampleBlocks,numSampleTperB,0,compStream>>>(dev_partition_sums, dev_distances_scanned, dev_multiset, dev_rnd, WARP_SIZE,  NUM_POINTS, N,dev_data);
 				// 	// -----------------------GPU-Based implementation of D2-Sample ends------------------------------
 					
 				// 	// Copying 2*NUM_CLUSTER random numbers on GPU to be used by meanHeuristic in next iteration
-				// 	int tempBound = i*(2*N + 2*NUM_CLUSTER);
-				// 	for(; randNumIter < tempBound; ++randNumIter)
+				// 	int tempBound = 2*(N + NUM_CLUSTER);
+				// 	for(randNumIter = 2*N ; randNumIter < tempBound; ++randNumIter)
 				// 		rnd[randNumIter] 	= ((float) rand())/RAND_MAX;
-				// 	checkCudaErrors(cudaMemcpyAsync(dev_rnd + tempBound - 2*NUM_CLUSTER,rnd + tempBound - 2*NUM_CLUSTER,2*NUM_CLUSTER*sizeof(float),cudaMemcpyHostToDevice, compStream));
+
+				// 	checkCudaErrors(cudaMemcpyAsync(dev_rnd + 2*N ,rnd + 2*N ,2*NUM_CLUSTER*sizeof(float),cudaMemcpyHostToDevice, compStream));
 
 				// 	// cudaEventRecord(stop_gpu,compStream);
 				// 	// cudaEventSynchronize(stop_gpu);
@@ -339,16 +338,16 @@ int main(int argc, char const *argv[])
 
 
 				// 		// Combined comp_dist_package and mean_heuristic_assign_gpu into 1 function
-				// 		mean_heuristic_GPU<<<1,WARP_SIZE*WARP_SIZE,0,compStream>>>(dev_multiset,dev_l2_centers, N, dev_rnd + i*(2*N + 2*NUM_CLUSTER) - 2*NUM_CLUSTER, dev_centers_temp );
+				// 		mean_heuristic_GPU<<<1,WARP_SIZE*WARP_SIZE,0,compStream>>>(dev_multiset,dev_l2_centers, N, dev_rnd + 2*N, dev_centers_temp );
 
 				// 		// Copying 2*N random numbers on GPU to be used by sampling multiset in next iteration
 				// 		if( i < NUM_CLUSTER -1)// We don't want any random number to be transeffered to GPU in the end, hence this if
 				// 		{
-				// 			int tempBound = 2*N + i*(2*N + 2*NUM_CLUSTER);
-				// 			for(; randNumIter < tempBound; ++randNumIter)
+				// 			int tempBound = 2*N;
+				// 			for(randNumIter = 0; randNumIter < tempBound; ++randNumIter)
 				// 				rnd[randNumIter] 	= ((float) rand())/RAND_MAX;
 
-				// 			checkCudaErrors(cudaMemcpyAsync(dev_rnd + tempBound - 2*N ,rnd + tempBound - 2*N, 2*N*sizeof(float),cudaMemcpyHostToDevice, compStream));
+				// 			checkCudaErrors(cudaMemcpyAsync(dev_rnd ,rnd, 2*N*sizeof(float),cudaMemcpyHostToDevice, compStream));
 				// 		}
 
 				// 		// Copy next chosen center to dev_centers_global and centers array(copying to centers array can be avoideds)
@@ -356,6 +355,17 @@ int main(int argc, char const *argv[])
 				// 		// cudaMemcpyToSymbol(dev_centers_global , dev_centers_temp, DIMENSION*sizeof(float), i*DIMENSION*sizeof(float), cudaMemcpyDeviceToDevice); -- Now copying from centers array to dev_centers_GPU. These 2 copies are avoided. Directly copy to dev_centers_global
 
 				// 		checkCudaErrors(cudaMemcpyToSymbol(dev_centers_global, dev_centers_temp, DIMENSION*sizeof(float), i*DIMENSION*sizeof(float), cudaMemcpyDeviceToDevice));
+				// 		// ---- For debugging purposes only -----------
+				// 		// checkCudaErrors(cudaMemcpy(centers + i*DIMENSION, dev_centers_temp, DIMENSION*sizeof(float),cudaMemcpyDeviceToHost));
+				// 		// printf("Center::%d\t",i );
+				// 		// for (int iterJ = 0; iterJ < DIMENSION; ++iterJ)
+				// 		// {
+				// 		// 	printf("%f\t",centers[i*DIMENSION + iterJ]);
+				// 		// }
+				// 		// printf("\n");
+
+				// 		// ---- For debugging purposes only -----------
+
 
 				// 	// ------------------------ Mean-Heuristic on GPU ends ---------------------------------------------
 
@@ -391,7 +401,7 @@ int main(int argc, char const *argv[])
 			// ---------------------- CPU-Based Implementation Start ------------------------------------
 				float* distances = (float*)malloc(NUM_POINTS*sizeof(float));
 				float* multiset;
-				for(i = 0; i < NUM_CLUSTER; i++)
+				for(int i = 0; i < NUM_CLUSTER; i++)
 				{
 					struct timeval sample_start,sample_end;
 					gettimeofday(&sample_start,NULL);
@@ -400,14 +410,26 @@ int main(int argc, char const *argv[])
 					// multiset = d2_sample_2(data,centers,NUM_POINTS,N,i,distances);
 					multiset = d2_sample_4(data,centers,NUM_POINTS,N,i,distances); // Better for to avoid errors due to optimizations
 					gettimeofday(&sample_end,NULL);
+					// for (int iterI = 0; iterI < N; ++iterI)
+					// {
+					// 	printf("%d\t",iterI );
+					// 	for (int iterJ = 0; iterJ < DIMENSION; ++iterJ)
+					// 	{
+					// 		printf("%f\t",multiset[iterI*DIMENSION + iterJ] );
+					// 	}
+					// 	printf("\n");
+					// }
 					// printf("Time taken for d2_sample::%d-->%f\n",i,get_time_diff(sample_start,sample_end));
 					samplingTime_1[i] = get_time_diff(sample_start,sample_end);
 					gettimeofday(&sample_start,NULL);
 					float* nextCenter = mean_heuristic(multiset,N);
+					// printf("Center::%d\t",i );
 					for (int j = 0; j < DIMENSION; ++j)
 					{
 						centers[i*DIMENSION + j] = nextCenter[j];
+						// printf("%f\t",centers[i*DIMENSION + j] );
 					}
+					// printf("\n");
 					gettimeofday(&sample_end,NULL);
 					// printf("Time taken for mean_heuristic::%d-->%f\n",i,get_time_diff(sample_start,sample_end));
 					samplingTime_2[i] = get_time_diff(sample_start,sample_end);
@@ -905,7 +927,7 @@ int sample_from_distribution(float* probabilities, int startIndex, int endIndex,
     return mid;
 }
 
-// GPU version of sampling code
+// GPU version of sampling code, 
 __global__ void sample_from_distribution_gpu(float* dev_partition_sums, float* dev_distances, int* dev_sampled_indices, float* dev_rnd,int per_thread, int dev_NUM_POINTS, int dev_num_samples) 
 {
 
@@ -913,7 +935,7 @@ __global__ void sample_from_distribution_gpu(float* dev_partition_sums, float* d
 	int start,mid,end,groupNo,pointIndex;
 	float prob;
 	int i = blockIdx.x*blockDim.x + threadIdx.x;
-	if( i < dev_num_samples)
+	while( i < dev_num_samples)
 	{
 		// first pick a block from the local_sums distribution
 		// int groupNo =sample_from_distribution(partition_sums,0, numValidPartitions, rnd[2*i]*partition_sums[numValidPartitions-1]);
@@ -966,6 +988,8 @@ __global__ void sample_from_distribution_gpu(float* dev_partition_sums, float* d
 	    }
 	    pointIndex = mid;
 		dev_sampled_indices[i] = pointIndex;
+
+		i+= blockDim.x*gridDim.x;
 	}
 }
 
@@ -977,7 +1001,7 @@ __global__ void sample_from_distribution_gpu_copy(float* dev_partition_sums, flo
 	int start,mid,end,groupNo,pointIndex;
 	float prob;
 	int tid = blockIdx.x*blockDim.x + threadIdx.x;
-	if( tid < dev_num_samples)
+	while( tid < dev_num_samples)
 	{
 		// first pick a block from the local_sums distribution
 		// int groupNo =sample_from_distribution(partition_sums,0, numValidPartitions, rnd[2*tid]*partition_sums[numValidPartitions-1]);
@@ -1033,6 +1057,7 @@ __global__ void sample_from_distribution_gpu_copy(float* dev_partition_sums, flo
 	    {
 	    	dev_multiset[tid*DIMENSION + j] = dev_data[pointIndex*DIMENSION + j];
 	    }
+	    tid += blockDim.x*gridDim.x;
 		// dev_sampled_indices[tid] = pointIndex;
 	}
 }
@@ -1357,12 +1382,15 @@ __global__ void mean_heuristic_GPU(float* dev_data, float* dev_centers,int numPo
 	{
 		tempSample[0] = -1;
 		int tempIndex = dev_rnd[0]*numPoints;
+		// printf("L2_Center::0::\t");
 		for (int i = 0; i < DIMENSION; ++i)
 		{
 			dev_centers[i] = dev_data[tempIndex*DIMENSION + i];
+			// printf("%f\t",dev_centers[i] );
 		}
+		// printf("\n");
 	}
-
+	__syncthreads(); // No thread should move ahead until 0th level2 center is chosen -- Deadly concurrency bug
 	for (int centerIter = 1; centerIter < NUM_CLUSTER; ++centerIter)
 	{
 		int dataIndex 	= threadIdx.x + blockIdx.x*blockDim.x;		
@@ -1397,6 +1425,7 @@ __global__ void mean_heuristic_GPU(float* dev_data, float* dev_centers,int numPo
 	
 		// int startIndex 	= WARP_SIZE*blockIdx.x; // Each thread-block gets to scan an array of size n, with startIndex as computed
 		// dist_scanned[thid] 	= dev_distances[startIndex + thid]; // load input into shared memory
+		
 		dist_scanned[dataIndex] 	= distance; // load input into shared memory
 		if((dataIndex % WARP_SIZE) >= 1)
 			dist_scanned[dataIndex] = dist_scanned[dataIndex-1] + dist_scanned[dataIndex];
@@ -1409,8 +1438,7 @@ __global__ void mean_heuristic_GPU(float* dev_data, float* dev_centers,int numPo
 		if((dataIndex % WARP_SIZE) >= 16)
 			dist_scanned[dataIndex] = dist_scanned[dataIndex-16] + dist_scanned[dataIndex];
 
-		// printf("centerIter::%d,dataIndex:: %d distance::%f\tdist_scanned::%f\n",centerIter,dataIndex, distance,dist_scanned[dataIndex]);
-		// dist_scanned[dataIndex] = dist_scanned[dataIndex];
+		// printf("centerIter::%d,dataIndex:: %d\tdist_scanned::%f\tdistance::%f\n",centerIter,dataIndex, dist_scanned[dataIndex],distance);
 
 		if((dataIndex+ 1)%WARP_SIZE == 0) // For 1 block and many threads
 		{
@@ -1450,10 +1478,13 @@ __global__ void mean_heuristic_GPU(float* dev_data, float* dev_centers,int numPo
 				{
 					// partitionNum  = 0;
 					tempSample[0] = 0;
+					// printf("Partition Sum Index::%d\tprob::%f\trnd::%f\tpsum::%f\n",tempSample[0],prob,dev_rnd[2*centerIter],partition_sums[per_thread-1] );
 				}
 				else if( partition_sums[dataIndex-1] < prob )
 				{
 					tempSample[0] = dataIndex; // Important to do the update in a shared var so that other threads can also see it
+					// printf("Partition Sum Index::%d\tprob::%f\trnd::%f\tpsum::%f\n",tempSample[0],prob,dev_rnd[2*centerIter],partition_sums[per_thread-1] );
+
 					// partitionNum = dataIndex;
 				}
 			}
@@ -1491,18 +1522,24 @@ __global__ void mean_heuristic_GPU(float* dev_data, float* dev_centers,int numPo
 				if( dataIndex%per_thread == 0 )
 				{
 					// pointIndex = dataIndex;
+					// printf("L2_Center::%d::dataIndex::%d\tprob::%f\trnd::%f\tdist::%f\tdist_scnd::%f\n",centerIter, dataIndex, prob, dev_rnd[2*centerIter+1],distance,dist_scanned[end] );
 					for (int j = 0; j < DIMENSION; ++j)
 				    {
 				    	dev_multiset[j] = dev_data[dataIndex*DIMENSION + j];
+				    	// printf("%f\t",dev_multiset[j] );
 				    }
+				    // printf("\n");
 				}
 				else if (prob > dist_scanned[dataIndex-1])
 				{
 					// pointIndex = dataIndex;
+					// printf("L2_Center::%d::dataIndex::%d\tprob::%f\trnd::%f\tdist::%f\tdist_scnd::%f\n",centerIter, dataIndex, prob, dev_rnd[2*centerIter+1],distance,dist_scanned[end] );
 					for (int j = 0; j < DIMENSION; ++j)
 				    {
 				    	dev_multiset[j] = dev_data[dataIndex*DIMENSION + j];
+				    	// printf("%f\t",dev_multiset[j] );
 				    }
+				    // printf("\n");
 				}
 			}
 		}
@@ -1522,7 +1559,7 @@ __global__ void mean_heuristic_GPU(float* dev_data, float* dev_centers,int numPo
 	__shared__ int counts[NUM_CLUSTER];
 	// __shared__ int counts_index[NUM_CLUSTER];
 	__shared__ float cluster_means[NUM_CLUSTER*DIMENSION];
-	int tid = threadIdx.x;
+	int tid = threadIdx.x + blockDim.x*blockIdx.x;
 
 	// Initialize all the means and counts to zero
 	int pointIndex = tid;
@@ -1538,6 +1575,7 @@ __global__ void mean_heuristic_GPU(float* dev_data, float* dev_centers,int numPo
 		pointIndex += blockDim.x;
 	}
 	pointIndex = tid;
+	__syncthreads();  // Initialized cluster_means and counts array to zero, so no thread should move ahead of this point asynchronously
 	while(pointIndex < multisetSize)
 	{
 		// min_dist = distance(dev_l2_centers,multiset + i*DIMENSION);
@@ -1563,9 +1601,10 @@ __global__ void mean_heuristic_GPU(float* dev_data, float* dev_centers,int numPo
 				centerIndex = j;
 			}
 		}
-		
+		// printf("pointIndex::%d\tcenterIndex::%d\tmin_dist::%f\tPoint::%f, %f\n",pointIndex,centerIndex,min_dist, dev_multiset[pointIndex*DIMENSION], dev_multiset[pointIndex*DIMENSION+1]);
 		for(int j = 0; j < DIMENSION; j++)
 		{
+			// This is not absolutely correct, but this is the best we have. No support for atomicAdd on compute 5.0
 			atomicAdd(cluster_means + centerIndex*DIMENSION + j, dev_multiset[pointIndex*DIMENSION + j]); 
 		}
 		// counts[centerIndex]++;
@@ -1573,23 +1612,29 @@ __global__ void mean_heuristic_GPU(float* dev_data, float* dev_centers,int numPo
 		pointIndex += blockDim.x;
 	}
 	
+	__syncthreads(); // This was causing non-deterministic results even when seed for random num is fixed, deadly concurreny bug
 	if( tid == 0)
 	{
 		int maxSoFar = counts[0];
 		int maxIndex = 0;
+		// printf("Count::0::%d\n",counts[0] );
 		for (int i = 1; i < NUM_CLUSTER; ++i)
 		{
+			// printf("Count::%d::%d\n",i,counts[i] );
 			if (counts[i] > maxSoFar)
 			{
 				maxSoFar = counts[i];
 				maxIndex = i;
 			}
 		}
+		// printf("maxSoFar::%d\tMaxindex::%d\n",maxSoFar,maxIndex);
 		for(int i = 0; i < DIMENSION; i++)
 		{
 			dev_centers_temp[i] =  cluster_means[maxIndex*DIMENSION + i] / counts[maxIndex];
+			// printf("Cluster_means::%d\t%f\n",i,cluster_means[maxIndex*DIMENSION + i] );
 		}
 	}
+	__syncthreads();
 	/////////////////////////////////////////////////////////////////////////////////////////////
 }
 
@@ -2078,7 +2123,7 @@ __global__ void comp_dist_glbl(float* dev_data,float* dev_distances,float* dev_p
 }
 
 // This addtionally does things in strided fashion as opposed to assigning each thread some fixed block
-__global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,int centerIter,int numPoints,int dev_dimension,int rndedNumPoints)
+__global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,int centerIter,int numPoints,int rndedNumPoints)
 {
 	int dataIndex 	= threadIdx.x + blockIdx.x*blockDim.x;
 	int stride 		= blockDim.x*gridDim.x;
@@ -2088,9 +2133,10 @@ __global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,int 
 		if (centerIter == 1) // This is the first time dev_distances will get its values
 		{
 			min_dist = 0;
-			for (int j = 0; j < dev_dimension; ++j)
+			#pragma unroll
+			for (int j = 0; j < DIMENSION; ++j)
 			{
-				temp = dev_data[dataIndex*dev_dimension + j] - dev_centers_global[j]; // Accessing 0th center of dev_center_global
+				temp = dev_data[dataIndex*DIMENSION + j] - dev_centers_global[j]; // Accessing 0th center of dev_center_global
 				min_dist += temp*temp;
 			}
 			dev_distances[dataIndex] = min_dist*min_dist;
@@ -2100,9 +2146,10 @@ __global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,int 
 			// Assuming that dev_distances has been made cumulative, after this function call
 			min_dist 	= dev_distances[dataIndex];
 			local_dist 	= 0.0; 
-			for (int j = 0; j < dev_dimension; ++j)
+			#pragma unroll
+			for (int j = 0; j < DIMENSION; ++j)
 			{
-				temp = dev_data[dataIndex*dev_dimension + j] - dev_centers_global[(centerIter-1)*dev_dimension + j];
+				temp = dev_data[dataIndex*DIMENSION + j] - dev_centers_global[(centerIter-1)*DIMENSION + j];
 				local_dist += temp*temp;
 			}
 			min_dist = min(min_dist,local_dist*local_dist);
@@ -2113,9 +2160,9 @@ __global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,int 
 			// for (int i = 0; i < centerIter; ++i)
 			// {
 			// 	local_dist 	= 0;
-			// 	for (int j = 0; j < dev_dimension; ++j)
+			// 	for (int j = 0; j < DIMENSION; ++j)
 			// 	{
-			// 		temp = dev_data[dataIndex*dev_dimension + j] - dev_centers_global[i*dev_dimension + j];
+			// 		temp = dev_data[dataIndex*DIMENSION + j] - dev_centers_global[i*DIMENSION + j];
 			// 		local_dist += temp*temp;
 			// 	}
 			// 	min_dist = min(min_dist,local_dist);
@@ -2230,8 +2277,7 @@ float* d2_sample(float* data,float* centers,int numPts, int numSamples, int size
         // cost of each block
         float local_sum = 0;
         int center_size = size;
-        int i,j;
-        for(i = 0;i < block_size;i++)
+        for(int i = 0;i < block_size;i++)
         {    
             if(center_size == 0){
                 local_sum += 1;
@@ -2239,12 +2285,13 @@ float* d2_sample(float* data,float* centers,int numPts, int numSamples, int size
             } else{
                 p = data + (lower+i)*DIMENSION;
                 min_dist = distance(p,centers);
-                for (j = 1; j < center_size; j++) {
+                for (int j = 1; j < center_size; j++) {
                     local_dist = distance(p, centers + j*DIMENSION);
                     min_dist = min(min_dist, local_dist); // calculating minimum distances
                 }
                 local_sum +=  min_dist * min_dist;
                 distances[lower+i] =  min_dist * min_dist + prev_val; // make cumulative 
+                // printf("Distance::%d\t::%f::%f\n",lower+i,min_dist*min_dist,distances[lower+i] );
             }
             prev_val = distances[lower+i];
         }
@@ -2705,17 +2752,16 @@ float* d2_sample_5(float* data,float* centers,int numPts, int size, float* dista
 float* mean_heuristic(float* multiset,int multisetSize)
 {
 	// first do a kmeans++ initialiation on the multiset
-	int i,j;
+	// int i,j;
 	// gettimeofday(&start,NULL);
 	float* level_2_sample = (float*)malloc(NUM_CLUSTER*DIMENSION*sizeof(float));
 	float* distances = (float*)malloc(multisetSize*sizeof(float));
-	for(i = 0; i < NUM_CLUSTER; i++)
+	for(int i = 0; i < NUM_CLUSTER; i++)
 	{
 		// float* point = d2_sample(multiset,level_2_sample,multisetSize,1,i);
-		// float* point = d2_sample_2(multiset,level_2_sample,multisetSize,1,i,distances);
 		// float* point = d2_sample_3(multiset,level_2_sample,multisetSize,i,distances);
 		float* point = d2_sample_5(multiset,level_2_sample,multisetSize,i,distances); // Better for avoiding errors due to cost compute optimizations
-		for (j = 0; j < DIMENSION; ++j)
+		for (int j = 0; j < DIMENSION; ++j)
 		{
 			level_2_sample[i*DIMENSION + j] = point[j];
 		}
@@ -2727,10 +2773,10 @@ float* mean_heuristic(float* multiset,int multisetSize)
 	// gettimeofday(&start,NULL);
 	int* counts 			= (int*)malloc(NUM_CLUSTER*sizeof(int)); // number of points assigned to each kmeans++ center
     float* cluster_means 	= (float*)malloc(NUM_CLUSTER*DIMENSION*sizeof(float)); // for taking the centroid later on. We maintain a sum of all points assigned to a center here.
-    for (i = 0; i < NUM_CLUSTER; i++)
+    for (int i = 0; i < NUM_CLUSTER; i++)
     {
         counts[i] = 0;
-        for(j = 0; j< DIMENSION; j++)
+        for(int j = 0; j< DIMENSION; j++)
         {
         	cluster_means[i*DIMENSION + j] = 0;
         }
@@ -2809,7 +2855,7 @@ float* mean_heuristic(float* multiset,int multisetSize)
     	cluster_means[index*DIMENSION + i] /= counts[index];
     }
     free(counts);
-    free(cluster_means);
+    // free(cluster_means);
     free(local_tmp_counts);
     free(local_tmp_cluster_means);
     return cluster_means + index*DIMENSION;

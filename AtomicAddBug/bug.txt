@@ -1,0 +1,9 @@
+In mean_heurisitc_GPU function, when computing which cluster does each point belong to, we need to find mean for each cluster. 
+Here since multiple threads may be trying to write to the same cluster's mean, there are chances of concurrency bugs.
+Since there is no atomic floating point addition present in the cuda 5.*, this means that there is no correct way to do compute cluster means in parallel, except for computing local sums and then performing reduction on them.
+
+
+
+Bug present when choosing center 4,
+Search this line in the 2 files
+Center::4	747912.000000	34384.242188

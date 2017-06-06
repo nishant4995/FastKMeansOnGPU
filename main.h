@@ -55,17 +55,20 @@
 	// #endif
 	// #endif
 
-#define NUM_POINTS 70000
-#define DIMENSION 784
-#define NUM_CLUSTER 10
-#define DATA "mnist"
+// #define NUM_POINTS 434874
+// #define DIMENSION 3
+// #define NUM_CLUSTER 5
+// #define DATA "3d_pro_5"
 
-// #define NUM_POINTS 100000
-// #define DIMENSION 2
-// #define ROUNDED_DIMENSION 2
-// #define NUM_CLUSTER 100
-// #define ROUNDED_CLUSTER 128
-// #define DATA "birch3"
+// #define NUM_POINTS  581012
+// #define DIMENSION 54
+// #define NUM_CLUSTER 5
+// #define DATA "3d_spatial"
+
+#define NUM_POINTS 100000
+#define DIMENSION 2
+#define NUM_CLUSTER 100
+#define DATA "birch1"
 
 // Should be power of 2 and Max value is 1024 which is max number of threads_per_block on my GPU
 #define SCAN_BLOCK_SIZE 32
@@ -97,7 +100,6 @@
 #include "float.h"
 #include <helper_cuda.h>
 #include "cuda_profiler_api.h"
-#include <thrust/scan.h>
 
 static inline float sd(float* a, int n);
 static inline float mean(float* a, int n);
@@ -109,7 +111,7 @@ int main_check();
 __global__ void comp_dist(float* dev_data,float* dev_distances,float* dev_partition_sums, float* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
 __global__ void comp_dist_2(float* dev_data,float* dev_distances,float* dev_partition_sums, float* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
 __global__ void comp_dist_glbl(float* dev_data,float* dev_distances,float* dev_partition_sums,int centerIter,int numPoints,int dev_dimension,int numGPUThreads);
-__global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,int centerIter,int numPoints,int dev_dimension, int rndedNumPoints);
+__global__ void comp_dist_glbl_strided(float* dev_data,float* dev_distances,int centerIter,int numPoints, int rndedNumPoints);
 __global__ void comp_dist_strided(float* dev_data,float* dev_distances,float* dev_centers,int centerIter,int numPoints,int dev_dimension,int rndedNumPoints);
 __global__ void comp_dist_package(float* dev_data,float* dev_distances,float* dev_partition_sums, float* dev_centers,int centerIter,int numPoints,int dev_dimension,int numGPUThreads,float* dev_rnd);
 __global__ void comp_dist_package_with_loop(float* dev_data, float* dev_centers,int numPoints,float *dev_rnd);

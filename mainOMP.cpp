@@ -3,7 +3,8 @@
 int num_threads;
 random_device rd;
 mt19937 gen(rd());
-unsigned int max_val = gen.max();
+// unsigned int max_val = gen.max();
+unsigned int max_val = RAND_MAX;
 
 int main(int argc, char* argv[]){
 
@@ -36,7 +37,8 @@ int main(int argc, char* argv[]){
 
 	// FOR kmeans-par, THIRD ARGUMENT MUST SPECIFY THE OVERSAMPLING RATE(l) AND FOURTH MUST SPECIFY THE NUMBER OF ROUNDS(r)
 	
-	srand(time(NULL));
+	// srand(time(NULL));
+	srand(32);
 	string mode(argv[1]);
 	int method = -1;
 	int num_runs = atoi(argv[2]);
@@ -155,14 +157,14 @@ int main(int argc, char* argv[]){
 				vector<Point> multiset = d2_sample(data,centers,weights,N,i);
 				// vector<Point> multiset = d2_sample_2(data,centers,weights,N,i,distances);
 				gettimeofday(&sample_end,NULL);
-				printf("Time taken for d2_sample::%d-->%f\n",i,get_time_diff(sample_start, sample_end));
+				// printf("Time taken for d2_sample::     	%d-->%f\n",i,get_time_diff(sample_start, sample_end));
 				samplingTime_1[i] = get_time_diff(sample_start,sample_end);
 				// printf("-------------------------end---------------------------------------\n");
 				gettimeofday(&sample_start,NULL);
 				centers[i] = mean_heuristic(multiset);
 				gettimeofday(&sample_end,NULL);
 				samplingTime_2[i] = get_time_diff(sample_start,sample_end);
-				printf("Time taken for mean_heuristic::%d-->%f\n",i,get_time_diff(sample_start, sample_end));
+				// printf("Time taken for mean_heuristic::	%d-->%f\n",i,get_time_diff(sample_start, sample_end));
 
 			}
 		} else if(method == 3){
@@ -381,12 +383,14 @@ vector<Point> d2_sample(vector<Point> &data,vector<Point> &centers,vector<int> &
             } else{
                 p = data[lower+i];
                 min_dist = distance(p,centers[0]);
-                for (int j = 1; j < centers.size(); j++) {
+                for (int j = 1; j < center_size; j++) {
                     local_dist = distance(p,centers[j]);
                     min_dist = min (min_dist, local_dist); // calculating minimum distances
                 }
                 local_sum += w * min_dist * min_dist;
                 distances[lower+i] = w * min_dist * min_dist + prev_val; // make cumulative 
+                // printf("Distance::%d\t::%f::%f\n",lower+i,min_dist*min_dist,distances[lower+i] );
+
             }
             prev_val = distances[lower+i];
         }
